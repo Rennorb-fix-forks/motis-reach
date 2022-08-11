@@ -177,4 +177,21 @@ inline bool is_reset(raptor_result_base const& result) {
   return true;
 }
 
+inline void print_reach_values(raptor_timetable const& timetable,
+                               raptor_meta_info const& meta_info,
+                               schedule const& sched) {
+  std::cout << "calculated reach values:" << std::endl;
+
+  if(meta_info.reach_values_.empty()) {
+    std::cout << "reach values empty (most likely not calculated)" << std::endl;
+    return;
+  }
+
+  for(int i = 0; i < timetable.stop_count(); i++)
+  {
+    std::cout << "[" << i << "] <" << meta_info.reach_values_[i] <<
+        "> " << sched.stations_[i]->eva_nr_ << std::endl;
+  }
+}
+
 }  // namespace motis::raptor

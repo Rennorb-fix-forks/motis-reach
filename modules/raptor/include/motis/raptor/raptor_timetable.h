@@ -77,6 +77,11 @@ struct raptor_stop {
   stop_routes_index index_to_stop_routes_;
 };
 
+struct stop_time {
+  time arrival_{invalid<decltype(arrival_)>};
+  time departure_{invalid<decltype(departure_)>};
+};
+
 struct raptor_route {
   raptor_route() = delete;
   raptor_route(trip_count const tc, stop_count const sc,
@@ -92,10 +97,6 @@ struct raptor_route {
   route_stops_index index_to_route_stops_;
 };
 
-struct stop_time {
-  time arrival_{invalid<decltype(arrival_)>};
-  time departure_{invalid<decltype(departure_)>};
-};
 
 struct raptor_footpath {
   raptor_footpath() = delete;
@@ -151,6 +152,54 @@ struct raptor_timetable {
   auto footpath_count() const {
     return static_cast<footpath_id>(footpaths_.size());
   }
+
+  [[nodiscard]] inline stop_offset
+  find_stop_offset(raptor_route const& route, stop_id stop_idx) const
+  {
+    for(stop_offset offset = 0; offset < route.stop_count_; offset++)
+      if(this->route_stops_[route.index_to_route_stops_ + offset] == stop_idx)
+        return offset;
+    return invalid<stop_offset>;
+  }
+
+  template<typename T>
+  struct index_iterator {
+    T const* start_;
+    T const* end_;
+
+    index_iterator() = delete;
+    index_iterator(T const* start, T const* end)
+    {
+      start_ = start;
+      end_   = end;
+    }
+
+    T const* begin() { return start_; }
+    T const* end() { return end_; }
+  };
+
+  [[nodiscard]] inline index_iterator<route_id>
+  iterate_route_indices(raptor_stop const& stop) const
+  {
+    auto start = stop.index_to_stop_routes_;
+    return {this->stop_routes_.data() + start,
+            this->stop_routes_.data() + start + stop.route_count_};
+  }
+
+  [[nodiscard]] inline stop_time const&
+  get_time_at(raptor_route const& route, trip_id _trip_id,
+              stop_offset _stop_offset) const
+  {
+    auto idx = route.index_to_stop_times_ + (route.stop_count_ * _trip_id)
+               + _stop_offset;
+    return this->stop_times_[idx];
+  }
+
+  [[nodiscard]] inline stop_id const&
+  get_route_stop_idx(raptor_route const& route, stop_offset _stop_offset) const
+  {
+    return this->route_stops_[route.index_to_route_stops_ + _stop_offset];
+  }
 };
 
 struct raptor_meta_info {
@@ -186,6 +235,11 @@ struct raptor_meta_info {
   // duration of the footpaths INCLUDE transfer time from the departure
   // station
   std::vector<std::vector<raptor_footpath>> initialization_footpaths_;
+
+  //NOTE(Rennorb): Be s,v,t vertices of a graph G and m(x, y, G) a metric.
+  // The reach of a v on a G is the max{ (s,t) : min(m(s,v,G), m(v,t,G)) } where
+  // (x,y) is a least cost path from x to y in G
+  std::vector<float> reach_values_;
 };
 
 }  // namespace motis::raptor

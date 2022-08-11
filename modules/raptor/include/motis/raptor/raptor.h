@@ -17,6 +17,8 @@ struct config {
 #endif
 };
 
+extern bool use_reach;
+
 struct raptor : public motis::module::module {
   raptor();
   ~raptor() override;

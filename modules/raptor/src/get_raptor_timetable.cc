@@ -388,6 +388,8 @@ std::unique_ptr<raptor_meta_info> transformable_to_meta_info(
     }
   }
 
+  meta_info->reach_values_.reserve(ttt.stations_.size());
+
   return meta_info;
 }
 

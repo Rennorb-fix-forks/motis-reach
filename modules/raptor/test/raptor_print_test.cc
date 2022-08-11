@@ -28,6 +28,7 @@ TEST(print_raptor_itest, just_print) {
   get_routes_containing(std::vector<stop_id>{0, 1}, *raptor_timetable);
   get_routes_containing_evas(std::vector<std::string>{"8000096", "8000080"},
                              *meta_info, *raptor_timetable);
+  print_reach_values(*raptor_timetable, *meta_info, *sched);
 }
 
 TEST(print_raptor_itest_results, just_print) {

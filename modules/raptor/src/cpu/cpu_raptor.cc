@@ -1,4 +1,7 @@
+#include <numeric>
 #include "motis/raptor/cpu/cpu_raptor.h"
+#include "motis/core/common/logging.h"
+#include "motis/routing/label/criteria/travel_time.h"
 
 namespace motis::raptor {
 
@@ -55,9 +58,25 @@ void init_arrivals(raptor_result& result, raptor_query const& q,
   }
 }
 
+// these could be modified
+float dist_metric(time src_time, time dst_time) {
+  return static_cast<float>(dst_time - src_time);
+}
+float reach_metric(time src_time, time dst_time) {
+  return dist_metric(src_time, dst_time);
+}
+
+// returns true if reach values indicate viable path
+bool test_reach(std::vector<float> const& reach_values, time src_time,
+                stop_id curr_stop, time curr_stop_time, time dst_time) {
+  return reach_values[curr_stop] >= reach_metric(src_time, curr_stop_time)
+         || reach_values[curr_stop] >= dist_metric(curr_stop_time, dst_time);
+}
+
 void update_route(raptor_timetable const& tt, route_id const r_id,
                   time const* const prev_arrivals, time* const current_round,
-                  earliest_arrivals& ea, cpu_mark_store& station_marks) {
+                  earliest_arrivals& ea, cpu_mark_store& station_marks,
+                  reach_data* reach_dat) {
   auto const& route = tt.routes_[r_id];
 
   trip_count earliest_trip_id = invalid<trip_count>;
@@ -81,6 +100,14 @@ void update_route(raptor_timetable const& tt, route_id const r_id,
     // need the minimum due to footpaths updating arrivals
     // and not earliest arrivals
     auto const min = std::min(current_round[stop_id], ea[stop_id]);
+
+    if(reach_dat && !test_reach(reach_dat->reach_values,
+                                reach_dat->source_time_dep, stop_id, min,
+                                reach_dat->const_graph.dists_[stop_id]))
+    {
+      //LOG(logging::info) << "discarding " << stop_id << " because of reach";
+      continue;
+    }
 
     if (stop_time.arrival_ < min) {
       station_marks.mark(stop_id);
@@ -152,7 +179,8 @@ void update_footpaths(raptor_timetable const& tt, time* current_round,
   }
 }
 
-void invoke_cpu_raptor(raptor_query const& query, raptor_statistics&) {
+void invoke_cpu_raptor(schedule const& sched, raptor_query const& query,
+                   std::vector<float> const& reach_values, raptor_statistics&) {
   auto const& tt = query.tt_;
 
   auto& result = *query.result_;
@@ -162,6 +190,12 @@ void invoke_cpu_raptor(raptor_query const& query, raptor_statistics&) {
   cpu_mark_store route_marks(tt.route_count());
 
   init_arrivals(result, query, station_marks);
+
+  auto graph = build_station_graph(sched.station_nodes_, search_dir::FWD);
+  constant_graph_dijkstra<routing::MAX_TRAVEL_TIME, map_station_graph_node>
+      const_dijkstra{graph, {query.target_}, {}};
+  const_dijkstra.run();
+  reach_data reach_dat{reach_values, query.source_time_end_, const_dijkstra};
 
   for (raptor_round round_k = 1; round_k < max_raptor_round; ++round_k) {
     bool any_marked = false;
@@ -195,12 +229,216 @@ void invoke_cpu_raptor(raptor_query const& query, raptor_statistics&) {
       }
 
       update_route(tt, r_id, result[round_k - 1], result[round_k], ea,
-                   station_marks);
+                   station_marks, &reach_dat);
     }
 
     route_marks.reset();
 
     update_footpaths(tt, result[round_k], ea, station_marks);
+  }
+}
+
+struct CacheRequest {
+  raptor_timetable const& timetable_;
+  stop_id                 start_;
+  time                    start_time_;
+};
+
+
+void find_best_routes(raptor_result & result, CacheRequest const& cache_request) {
+  auto & timetable = cache_request.timetable_;
+  earliest_arrivals ea(timetable.stop_count(), invalid<time>);
+
+  cpu_mark_store station_marks(timetable.stop_count());
+  cpu_mark_store route_marks(timetable.route_count());
+
+  result[0][cache_request.start_] = cache_request.start_time_;
+  station_marks.mark(cache_request.start_);
+
+  for (raptor_round round_k = 1; round_k < max_raptor_round; ++round_k) {
+    bool any_marked = false;
+
+    for (auto stop_id = 0; stop_id < timetable.stop_count(); ++stop_id) {
+      if (!station_marks.marked(stop_id)) {
+        continue;
+      }
+      any_marked = true;
+
+      auto const& stop = timetable.stops_[stop_id];
+      for (auto i = 0; i < stop.route_count_; ++i) {
+        route_marks.mark(timetable.stop_routes_[stop.index_to_stop_routes_ + i]);
+      }
+    }
+
+    if (!any_marked) {
+      break;
+    }
+
+    station_marks.reset();
+
+    for (route_id r_id = 0; r_id < timetable.route_count(); ++r_id) {
+      if (!route_marks.marked(r_id)) {
+        continue;
+      }
+
+      update_route(timetable, r_id, result[round_k - 1], result[round_k], ea,
+                   station_marks);
+    }
+
+    route_marks.reset();
+
+    update_footpaths(timetable, result[round_k], ea, station_marks);
+  }
+}
+
+void generate_reach_cache(raptor_timetable const& timetable,
+                          std::vector<float>& reach_values)
+{
+  logging::scoped_timer timer("generating reach cache] [cpu");
+  reach_values.resize(timetable.stop_count(), 0);
+
+  CacheRequest cache_request {timetable, invalid<stop_id>, invalid<time>};
+  raptor_result result(timetable.stop_count());
+  //NOTE(Rennorb): we can't just loop over all routs and take their stops
+  // directly as we might run the query for the same stop multiple times if
+  // it's shared by multiple routes. which would be more wasteful that the
+  // additional index resolutions we have to do just loop over all stops once.
+  for(int src_stop = 0; src_stop < timetable.stop_count(); src_stop++)
+  {
+    auto source = timetable.stops_[src_stop];
+    //LOG(logging::info) << "----------start: " << src_stop << "("<< source.route_count_ << " routes)------------";
+    for(route_id route_idx : timetable.iterate_route_indices(source))
+    {
+      auto& route_for_times = timetable.routes_[route_idx];
+      for(int route_stop = 0; route_stop < route_for_times.stop_count_; route_stop++)
+      {
+        auto stop_idx = timetable.route_stops_[route_for_times.index_to_route_stops_ + route_stop];
+
+        if(stop_idx != src_stop) continue;
+        //found the right stop
+
+        for(int trip_for_times = 0; trip_for_times < route_for_times.trip_count_; trip_for_times++)
+        {
+          auto time_pair = timetable.stop_times_[
+              route_for_times.index_to_stop_times_ + (trip_for_times * route_for_times.stop_count_) + route_stop];
+          /*
+          LOG(logging::info) << " " << format_time(time_pair.arrival_)
+                             << " from route " << route_idx
+                             << ", trip " << (trip_for_times+1) << "/" << route_for_times.trip_count_;
+                             */
+          cache_request.start_      = stop_idx;
+          cache_request.start_time_ = time_pair.departure_;
+
+          result.reset();
+          find_best_routes(result, cache_request);
+
+          //TODO(Rennorb): could prob thread this
+          for(int dst_stop = 0; dst_stop < timetable.stop_count(); dst_stop++)
+          {
+#if 0 //~dbg
+            std::stringstream line;
+            line << "idx: " << dst_stop << " [";
+
+            bool has_valid = false;
+            for(int round = 0; round < max_raptor_round; round++)
+            {
+              auto val = result[round][dst_stop];
+              if(val == invalid<time>)
+                line << "- ";
+              else
+              {
+                line << format_time(val) << ' ';
+                has_valid = true;
+              }
+            }
+
+            line << "]";
+
+            if(has_valid)
+              LOG(logging::info) << line.str();
+#endif
+
+            // ignore loop route (x to x)
+            if(dst_stop == src_stop) continue;
+
+            //TODO(Rennorb): just take the last one
+            raptor_round best_arrival_round = invalid<raptor_round>;
+            time         best_arrival_time  = invalid<time>;
+            for(raptor_round round = 0; round < max_raptor_round; round++)
+            {
+              if(result[round][dst_stop] < best_arrival_time)
+              {
+                best_arrival_time  = result[round][dst_stop];
+                best_arrival_round = round;
+              }
+            }
+            if(!valid(best_arrival_round)) continue; // cant find a way to get here
+
+            //start working backwards and reconstruct the journeys
+            stop_id current_stop_idx = dst_stop;
+            for(raptor_round round = best_arrival_round; round > 0; round--)
+            {
+              /*
+               LOG(logging::info) << "retracing " << current_stop_idx << "@"
+                                  << format_time(result[round][current_stop_idx])
+                                  << " from round id " << (int)round;
+                                  */
+
+              auto& current_stop = timetable.stops_[current_stop_idx];
+              for(route_id current_stop_route_idx : timetable.iterate_route_indices(current_stop))
+              {
+                auto& route = timetable.routes_[current_stop_route_idx];
+                stop_offset current_stop_offset = timetable.find_stop_offset(route, current_stop_idx);
+                for(int current_stop_route_trip = 0; current_stop_route_trip < route.trip_count_; current_stop_route_trip++)
+                {
+                  auto time_idx = route.index_to_stop_times_ + (current_stop_route_trip * route.stop_count_) + current_stop_offset;
+                  if(timetable.stop_times_[time_idx].arrival_ != result[round][current_stop_idx]) continue;
+                  //found a trip that could be used
+
+                  for(stop_offset offset = 0; offset < current_stop_offset; offset++)
+                  {
+                    time departure = timetable.get_time_at(route, current_stop_route_trip, offset).departure_;
+                    auto entrance_stop_idx = timetable.get_route_stop_idx(route, offset);
+                    /*if(valid(result[round - 1][entrance_stop_idx]))
+                      LOG(logging::info) << format_time(result[round - 1][entrance_stop_idx]) << " --> "
+                                         << entrance_stop_idx << " --> " << format_time(departure);
+                                         */
+                    if (departure < result[round - 1][entrance_stop_idx]) continue;
+                    // found the entry point for this trip
+
+                    //LOG(logging::info) << "found entrypoint at route "
+                    //                << current_stop_route_idx << " and trip "
+                    //                << current_stop_route_trip << " starting with "
+                     //               << entrance_stop_idx << "@" << format_time(result[round - 1][entrance_stop_idx]);
+
+                    auto update_reach = [&reach_values, &result, src_stop, best_arrival_time, round](stop_id node_idx) {
+                      float reach_to_node = reach_metric(result[0][src_stop], result[round][node_idx]);
+                      float reach_from_node = reach_metric(result[round][node_idx], best_arrival_time);
+                      float new_reach = std::min(reach_to_node, reach_from_node);
+                      if(new_reach > reach_values[node_idx])
+                        reach_values[node_idx] = new_reach;
+                    };
+
+                    // update all nodes on this trip
+                    update_reach(current_stop_idx); // mark exit node
+                    for(stop_offset to_mark = offset + 1; offset < current_stop_offset - 1; offset++)
+                    {
+                      auto node_idx = timetable.get_route_stop_idx(route, to_mark);
+                      update_reach(node_idx);
+                    }
+                    update_reach(entrance_stop_idx); // mark entrance node
+
+                    current_stop_idx = entrance_stop_idx;
+                    goto multi_break;
+                  }
+                }
+              }
+              multi_break:;
+            }
+          }
+        }
+      }
+    }
   }
 }
 

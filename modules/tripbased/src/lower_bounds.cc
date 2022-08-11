@@ -13,7 +13,7 @@ lower_bounds calc_lower_bounds(schedule const& sched,
     auto const from_station = query.start_station_;
     auto const to_station = e.station_id_;
     travel_time_lb_graph_edges[to_station].emplace_back(
-        simple_edge{from_station, e.duration_});
+        simple_edge{from_ station, e.duration_});
   }
 
   for (auto const& e : query.destination_edges_) {

@@ -18,6 +18,7 @@
 
 using namespace motis::module;
 using namespace motis::routing;
+using namespace motis::logging;
 
 namespace motis::raptor {
 
@@ -65,6 +66,7 @@ msg_ptr make_response(schedule const& sched, std::vector<journey> const& js,
   return make_msg(fbb);
 }
 
+bool use_reach;
 struct raptor::impl {
   impl(schedule const& sched, [[maybe_unused]] config const& config)
       : sched_{sched} {
@@ -80,6 +82,16 @@ struct raptor::impl {
   }
 
   msg_ptr route_cpu(msg_ptr const& msg) {
+    if(motis::raptor::use_reach) {
+      LOG(logging::info) << "generating reach values";
+      this->cache_reach();
+    } else {
+      LOG(logging::info) << "reach disabled";
+      this->meta_info_->reach_values_.clear();
+      this->meta_info_->reach_values_.resize(this->timetable_->stop_count(),
+                                              std::numeric_limits<float>::max());
+    }
+
     MOTIS_START_TIMING(total_calculation_time);
 
     auto const req = motis_content(RoutingRequest, msg);
@@ -128,6 +140,15 @@ struct raptor::impl {
 
   memory_store mem_store_;
 #endif
+
+  void cache_reach() const {
+#if defined(MOTIS_CUDA)
+    //TODO(Rennorb): @implementation
+    generate_reach_cache(*timetable_, meta_info_->reach_values_);
+#else
+    generate_reach_cache(*timetable_, meta_info_->reach_values_);
+#endif
+  }
 };
 
 raptor::raptor() : module("RAPTOR Options", "raptor") {
