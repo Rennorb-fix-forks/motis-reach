@@ -1,7 +1,9 @@
-#include <numeric>
+#include <unordered_set>
+
 #include "motis/raptor/cpu/cpu_raptor.h"
 #include "motis/core/common/logging.h"
 #include "motis/routing/label/criteria/travel_time.h"
+#include "utl/progress_tracker.h"
 
 namespace motis::raptor {
 
@@ -299,12 +301,26 @@ void generate_reach_cache(raptor_timetable const& timetable,
 
   CacheRequest cache_request {timetable, invalid<stop_id>, invalid<time>};
   raptor_result result(timetable.stop_count());
+  std::unordered_set<time> processed_starts;
+
+  auto bars = utl::global_progress_bars{false};
+
+  auto tracker = utl::activate_progress_tracker("reach cache generation");
+  tracker->status("processing nodes").out_bounds(0, 100).in_high(timetable.stop_count());
+  auto skiped_tracker = utl::activate_progress_tracker("skipped duplicate starts");
+  skiped_tracker->status("skipped departures").out_bounds(0, 100).in_high(timetable.stop_times_.size());
+
   //NOTE(Rennorb): we can't just loop over all routs and take their stops
   // directly as we might run the query for the same stop multiple times if
   // it's shared by multiple routes. which would be more wasteful that the
   // additional index resolutions we have to do just loop over all stops once.
   for(int src_stop = 0; src_stop < timetable.stop_count(); src_stop++)
   {
+    //if(src_stop == 500) exit(0);
+    //LOG(logging::info) << (float)src_stop / timetable.stop_count() << "% done";
+
+    processed_starts.clear();
+
     auto source = timetable.stops_[src_stop];
     //LOG(logging::info) << "----------start: " << src_stop << "("<< source.route_count_ << " routes)------------";
     for(route_id route_idx : timetable.iterate_route_indices(source))
@@ -321,12 +337,18 @@ void generate_reach_cache(raptor_timetable const& timetable,
         {
           auto time_pair = timetable.stop_times_[
               route_for_times.index_to_stop_times_ + (trip_for_times * route_for_times.stop_count_) + route_stop];
+
+          if (processed_starts.find(time_pair.departure_) != processed_starts.end()) {
+            skiped_tracker->increment(1);
+            continue;
+          }
+          processed_starts.insert(time_pair.departure_);
           /*
           LOG(logging::info) << " " << format_time(time_pair.arrival_)
                              << " from route " << route_idx
                              << ", trip " << (trip_for_times+1) << "/" << route_for_times.trip_count_;
                              */
-          cache_request.start_      = stop_idx;
+          cache_request.start_      = src_stop;
           cache_request.start_time_ = time_pair.departure_;
 
           result.reset();
@@ -439,6 +461,7 @@ void generate_reach_cache(raptor_timetable const& timetable,
         }
       }
     }
+    tracker->increment(1);
   }
 }
 

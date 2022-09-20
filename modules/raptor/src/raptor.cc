@@ -1,3 +1,6 @@
+#include <filesystem>
+#include <fstream>
+
 #include "motis/raptor/raptor.h"
 
 #include "utl/to_vec.h"
@@ -142,12 +145,31 @@ struct raptor::impl {
 #endif
 
   void cache_reach() const {
+    //TODO(Rennorb): add source scheduel name into file path
+    auto reach_storage_path = ".reach";
+    LOG(logging::info) << "reach storage file: " << std::filesystem::absolute(reach_storage_path);
+
+    if (std::filesystem::exists(reach_storage_path)) {
+      LOG(logging::info) << "loading reach from file";
+
+      std::ifstream file{reach_storage_path, std::ios::in | std::ios::binary};
+      //assume it already has the correct sise since its initialized in the ctor
+      file.read((char*)meta_info_->reach_values_.data(),
+          sizeof(meta_info_->reach_values_[0]) * meta_info_->reach_values_.size());
+      file.close();
+    } else {
 #if defined(MOTIS_CUDA)
-    //TODO(Rennorb): @implementation
-    generate_reach_cache(*timetable_, meta_info_->reach_values_);
+      // TODO(Rennorb): @implementation
+      generate_reach_cache(*timetable_, meta_info_->reach_values_);
 #else
-    generate_reach_cache(*timetable_, meta_info_->reach_values_);
+      generate_reach_cache(*timetable_, meta_info_->reach_values_);
 #endif
+
+      std::ofstream file{reach_storage_path, std::ios::out | std::ios::trunc | std::ios::binary};
+      file.write((char*)meta_info_->reach_values_.data(),
+          sizeof(meta_info_->reach_values_[0]) * meta_info_->reach_values_.size());
+      file.close();
+    }
   }
 };
 
