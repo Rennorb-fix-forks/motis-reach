@@ -1,5 +1,6 @@
 #include <unordered_set>
 
+#include "motis/raptor/raptor.h"
 #include "motis/raptor/cpu/cpu_raptor.h"
 #include "motis/core/common/logging.h"
 #include "motis/routing/label/criteria/travel_time.h"
@@ -103,15 +104,13 @@ void update_route(raptor_timetable const& tt, route_id const r_id,
     // and not earliest arrivals
     auto const min = std::min(current_round[stop_id], ea[stop_id]);
 
-    if(reach_dat && !test_reach(reach_dat->reach_values,
-                                reach_dat->source_time_dep, stop_id, min,
-                                reach_dat->const_graph.dists_[stop_id]))
-    {
-      //LOG(logging::info) << "discarding " << stop_id << " because of reach";
-      continue;
-    }
-
     if (stop_time.arrival_ < min) {
+      if (reach_dat &&
+          !test_reach(reach_dat->reach_values, reach_dat->source_time_dep,
+                      stop_id, min, reach_dat->const_graph.dists_[stop_id])) {
+        continue;
+      }
+
       station_marks.mark(stop_id);
       current_round[stop_id] = stop_time.arrival_;
     }
@@ -181,8 +180,15 @@ void update_footpaths(raptor_timetable const& tt, time* current_round,
   }
 }
 
+reach_data::reach_data(raptor_meta_info const& meta_info, raptor_query const& query) 
+: reach_values(meta_info.reach_values_),
+      source_time_dep(query.source_time_end_),
+      const_graph({meta_info.graph_, {query.target_}, {}}) {
+  this->const_graph.run();
+}
+
 void invoke_cpu_raptor(schedule const& sched, raptor_query const& query,
-                   std::vector<float> const& reach_values, raptor_statistics&) {
+                   raptor_meta_info const& meta_info, raptor_statistics&) {
   auto const& tt = query.tt_;
 
   auto& result = *query.result_;
@@ -193,11 +199,9 @@ void invoke_cpu_raptor(schedule const& sched, raptor_query const& query,
 
   init_arrivals(result, query, station_marks);
 
-  auto graph = build_station_graph(sched.station_nodes_, search_dir::FWD);
-  constant_graph_dijkstra<routing::MAX_TRAVEL_TIME, map_station_graph_node>
-      const_dijkstra{graph, {query.target_}, {}};
-  const_dijkstra.run();
-  reach_data reach_dat{reach_values, query.source_time_end_, const_dijkstra};
+  std::unique_ptr<reach_data> reach_data_p = nullptr;
+  if (motis::raptor::use_reach)
+    reach_data_p = std::make_unique<reach_data>(meta_info, query);
 
   for (raptor_round round_k = 1; round_k < max_raptor_round; ++round_k) {
     bool any_marked = false;
@@ -231,7 +235,7 @@ void invoke_cpu_raptor(schedule const& sched, raptor_query const& query,
       }
 
       update_route(tt, r_id, result[round_k - 1], result[round_k], ea,
-                   station_marks, &reach_dat);
+                   station_marks, reach_data_p.get());
     }
 
     route_marks.reset();
@@ -297,7 +301,6 @@ void generate_reach_cache(raptor_timetable const& timetable,
                           std::vector<float>& reach_values)
 {
   logging::scoped_timer timer("generating reach cache] [cpu");
-  reach_values.resize(timetable.stop_count(), 0);
 
   CacheRequest cache_request {timetable, invalid<stop_id>, invalid<time>};
   raptor_result result(timetable.stop_count());
@@ -343,11 +346,7 @@ void generate_reach_cache(raptor_timetable const& timetable,
             continue;
           }
           processed_starts.insert(time_pair.departure_);
-          /*
-          LOG(logging::info) << " " << format_time(time_pair.arrival_)
-                             << " from route " << route_idx
-                             << ", trip " << (trip_for_times+1) << "/" << route_for_times.trip_count_;
-                             */
+
           cache_request.start_      = src_stop;
           cache_request.start_time_ = time_pair.departure_;
 
@@ -357,30 +356,7 @@ void generate_reach_cache(raptor_timetable const& timetable,
           //TODO(Rennorb): could prob thread this
           for(int dst_stop = 0; dst_stop < timetable.stop_count(); dst_stop++)
           {
-#if 0 //~dbg
-            std::stringstream line;
-            line << "idx: " << dst_stop << " [";
-
-            bool has_valid = false;
-            for(int round = 0; round < max_raptor_round; round++)
-            {
-              auto val = result[round][dst_stop];
-              if(val == invalid<time>)
-                line << "- ";
-              else
-              {
-                line << format_time(val) << ' ';
-                has_valid = true;
-              }
-            }
-
-            line << "]";
-
-            if(has_valid)
-              LOG(logging::info) << line.str();
-#endif
-
-            // ignore loop route (x to x)
+            // loop route (x to x)
             if(dst_stop == src_stop) continue;
 
             //TODO(Rennorb): just take the last one
@@ -394,18 +370,13 @@ void generate_reach_cache(raptor_timetable const& timetable,
                 best_arrival_round = round;
               }
             }
-            if(!valid(best_arrival_round)) continue; // cant find a way to get here
+            // cant find a way to get here
+            if(!valid(best_arrival_round)) continue;
 
             //start working backwards and reconstruct the journeys
             stop_id current_stop_idx = dst_stop;
             for(raptor_round round = best_arrival_round; round > 0; round--)
             {
-              /*
-               LOG(logging::info) << "retracing " << current_stop_idx << "@"
-                                  << format_time(result[round][current_stop_idx])
-                                  << " from round id " << (int)round;
-                                  */
-
               auto& current_stop = timetable.stops_[current_stop_idx];
               for(route_id current_stop_route_idx : timetable.iterate_route_indices(current_stop))
               {

@@ -9,6 +9,7 @@
 
 #include "motis/core/schedule/connection.h"
 #include "motis/core/schedule/time.h"
+#include "motis/core/schedule/constant_graph.h"
 
 namespace motis::raptor {
 
@@ -240,6 +241,9 @@ struct raptor_meta_info {
   // The reach of a v on a G is the max{ (s,t) : min(m(s,v,G), m(v,t,G)) } where
   // (x,y) is a least cost path from x to y in G
   std::vector<float> reach_values_;
+  std::string reach_storage_path_;
+  bool reach_loaded_;
+  motis::constant_graph graph_;
 };
 
 }  // namespace motis::raptor

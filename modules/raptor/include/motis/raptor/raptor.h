@@ -17,6 +17,7 @@ struct config {
 #endif
 };
 
+//TODO(Rennorb): @robustness @jank may not be changed after initializing raptor metadata
 extern bool use_reach;
 
 struct raptor : public motis::module::module {

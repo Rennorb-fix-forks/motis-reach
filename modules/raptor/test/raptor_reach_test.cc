@@ -19,16 +19,11 @@ using namespace motis::raptor;
 using namespace motis::module;
 using namespace motis::routing;
 
-loader::loader_options options = {
-    .dataset_ = { "../test/schedule/simple_realtime" },
-    .schedule_begin_ = "20151124",
-    .num_days_ = 1
-};
+using motis::test::schedule::simple_realtime::dataset_opt;
 
 struct raptor_reach_test : public motis_instance_test {
   raptor_reach_test()
-      : motis::test::motis_instance_test(
-            options, { "routing", "raptor" }) {}
+      : motis::test::motis_instance_test(dataset_opt, {"routing", "raptor"}) {}
 
   msg_ptr make_routing_request(std::string const& target) {
     message_creator fbb;
@@ -54,7 +49,7 @@ struct raptor_reach_test : public motis_instance_test {
 };
 
 TEST_F(raptor_reach_test, reach_raptor_init) {
-  auto const sched = loader::load_schedule(options);
+  auto const sched = loader::load_schedule(dataset_opt);
 
   int runs = 100;
   std::vector<uint64_t> with_reach(runs);
@@ -69,6 +64,7 @@ TEST_F(raptor_reach_test, reach_raptor_init) {
     with_reach[i] = result->statistics()->LookupByKey("raptor")
                      ->entries()->LookupByKey(timer)
                       ->value();
+    
 
     motis::raptor::use_reach = false;
     auto response2 = call(make_routing_request("/raptor_cpu"));
@@ -76,13 +72,17 @@ TEST_F(raptor_reach_test, reach_raptor_init) {
     without_reach[i] = result2->statistics()->LookupByKey("raptor")
                     ->entries()->LookupByKey(timer)
                     ->value();
+
+    auto testee = message_to_journeys(result);
+    auto reference = message_to_journeys(result2);
+    EXPECT_EQ(reference, testee);
   }
 
   auto avg_with    = (float)std::reduce(with_reach.begin(), with_reach.end()) / (float)runs;
   auto avg_without = (float)std::reduce(without_reach.begin(), without_reach.end()) / (float)runs;
 
   LOG(logging::info) << runs << " runs; with reach: " << avg_with
-                             << "without reach: " << avg_without;
+                             << ", without reach: " << avg_without;
 
 }
 

@@ -69,7 +69,7 @@ msg_ptr make_response(schedule const& sched, std::vector<journey> const& js,
   return make_msg(fbb);
 }
 
-bool use_reach;
+bool use_reach = false;
 struct raptor::impl {
   impl(schedule const& sched, [[maybe_unused]] config const& config)
       : sched_{sched} {
@@ -85,14 +85,27 @@ struct raptor::impl {
   }
 
   msg_ptr route_cpu(msg_ptr const& msg) {
-    if(motis::raptor::use_reach) {
-      LOG(logging::info) << "generating reach values";
-      this->cache_reach();
-    } else {
-      LOG(logging::info) << "reach disabled";
-      this->meta_info_->reach_values_.clear();
-      this->meta_info_->reach_values_.resize(this->timetable_->stop_count(),
-                                              std::numeric_limits<float>::max());
+    if(motis::raptor::use_reach && !meta_info_->reach_loaded_) {
+      LOG(logging::info) << "using reach values";
+#if defined(MOTIS_CUDA)
+      // TODO(Rennorb): @implementation
+      generate_reach_cache(*timetable_, meta_info_->reach_values_);
+#else
+      generate_reach_cache(*timetable_, meta_info_->reach_values_);
+#endif
+
+      std::ofstream file{meta_info_->reach_storage_path_,
+                         std::ios::out | std::ios::trunc | std::ios::binary};
+      file.write((char*)meta_info_->reach_values_.data(),
+                 sizeof(meta_info_->reach_values_[0]) *
+                     meta_info_->reach_values_.size());
+      file.close();
+      meta_info_->reach_loaded_ = true;
+    }
+
+    if (motis::raptor::use_reach) {
+      meta_info_->graph_ =
+          build_station_graph(sched_.station_nodes_, search_dir::FWD);
     }
 
     MOTIS_START_TIMING(total_calculation_time);
@@ -143,34 +156,6 @@ struct raptor::impl {
 
   memory_store mem_store_;
 #endif
-
-  void cache_reach() const {
-    //TODO(Rennorb): add source scheduel name into file path
-    auto reach_storage_path = ".reach";
-    LOG(logging::info) << "reach storage file: " << std::filesystem::absolute(reach_storage_path);
-
-    if (std::filesystem::exists(reach_storage_path)) {
-      LOG(logging::info) << "loading reach from file";
-
-      std::ifstream file{reach_storage_path, std::ios::in | std::ios::binary};
-      //assume it already has the correct sise since its initialized in the ctor
-      file.read((char*)meta_info_->reach_values_.data(),
-          sizeof(meta_info_->reach_values_[0]) * meta_info_->reach_values_.size());
-      file.close();
-    } else {
-#if defined(MOTIS_CUDA)
-      // TODO(Rennorb): @implementation
-      generate_reach_cache(*timetable_, meta_info_->reach_values_);
-#else
-      generate_reach_cache(*timetable_, meta_info_->reach_values_);
-#endif
-
-      std::ofstream file{reach_storage_path, std::ios::out | std::ios::trunc | std::ios::binary};
-      file.write((char*)meta_info_->reach_values_.data(),
-          sizeof(meta_info_->reach_values_[0]) * meta_info_->reach_values_.size());
-      file.close();
-    }
-  }
 };
 
 raptor::raptor() : module("RAPTOR Options", "raptor") {

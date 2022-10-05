@@ -44,7 +44,7 @@ inline std::vector<journey> raptor_gen(Query& q, raptor_statistics& stats,
 
     MOTIS_START_TIMING(raptor_time);
     raptor_search(q);
-    stats.raptor_time_ = MOTIS_GET_TIMING_US(raptor_time);
+    stats.raptor_time_ = MOTIS_GET_TIMING_MS(raptor_time);
 
     MOTIS_START_TIMING(rec_timing);
     reconstructor.add(q);
@@ -89,10 +89,10 @@ inline std::vector<journey> raptor_gen(Query& q, raptor_statistics& stats,
 inline std::vector<journey> cpu_raptor(raptor_query& q,
                                        raptor_statistics& stats,
                                        schedule const& sched,
-                                       raptor_meta_info const& raptor_sched,
+                                       raptor_meta_info const& meta_info,
                                        raptor_timetable const& tt) {
-  return raptor_gen(q, stats, sched, raptor_sched, tt, [&](raptor_query& q) {
-    return invoke_cpu_raptor(sched, q, raptor_sched.reach_values_, stats);
+  return raptor_gen(q, stats, sched, meta_info, tt, [&](raptor_query& q) {
+    return invoke_cpu_raptor(sched, q, meta_info, stats);
   });
 }
 
