@@ -6,10 +6,13 @@
 #include <istream>
 #include <memory>
 #include <ostream>
+#include <filesystem>
 
 #include "utl/erase.h"
+#include "utl/verify.h"
 
 #include "motis/module/message.h"
+
 
 using namespace motis::module;
 
@@ -26,6 +29,9 @@ public:
         in_(input_file_path),
         out_(output_file_path),
         num_threads_(num_threads) {
+    
+    utl::verify(std::filesystem::exists(input_file_path),
+                "batch input '{}' does not exist", input_file_path);
     in_.exceptions(std::ifstream::failbit | std::ifstream::badbit);
     out_.exceptions(std::ifstream::failbit | std::ifstream::badbit);
   }
