@@ -242,7 +242,7 @@ struct raptor_meta_info {
   // (x,y) is a least cost path from x to y in G
   std::vector<float> reach_values_;
   std::string reach_storage_path_;
-  bool reach_loaded_;
+  bool reach_loaded_{false};
   motis::constant_graph graph_;
 };
 

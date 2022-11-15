@@ -3,6 +3,7 @@
 #include "motis/raptor/raptor.h"
 #include "motis/raptor/cpu/cpu_raptor.h"
 #include "motis/core/common/logging.h"
+#include "motis/core/common/timing.h"
 #include "motis/routing/label/criteria/travel_time.h"
 #include "utl/progress_tracker.h"
 
@@ -104,15 +105,23 @@ void update_route(raptor_timetable const& tt, route_id const r_id,
     // and not earliest arrivals
     auto const min = std::min(current_round[stop_id], ea[stop_id]);
 
-    if (stop_time.arrival_ < min) {
-      if (reach_dat &&
-          !test_reach(reach_dat->reach_values, reach_dat->source_time_dep,
+    if (reach_dat) {
+      reach_dat->stats.raptor_station_queries_++;
+      if (!test_reach(reach_dat->reach_values, reach_dat->source_time_dep,
                       stop_id, min, reach_dat->const_graph.dists_[stop_id])) {
+        reach_dat->stats.reach_dropped_stations_++;
         continue;
       }
+    }
+    
 
-      station_marks.mark(stop_id);
-      current_round[stop_id] = stop_time.arrival_;
+    if (stop_time.arrival_ < min) {
+      //if (!reach_dat ||
+      //    test_reach(reach_dat->reach_values, reach_dat->source_time_dep,
+      //               stop_id, min, reach_dat->const_graph.dists_[stop_id])) {
+        station_marks.mark(stop_id);
+        current_round[stop_id] = stop_time.arrival_;
+      //}
     }
 
     /*
@@ -180,15 +189,17 @@ void update_footpaths(raptor_timetable const& tt, time* current_round,
   }
 }
 
-reach_data::reach_data(raptor_meta_info const& meta_info, raptor_query const& query) 
-: reach_values(meta_info.reach_values_),
+reach_data::reach_data(raptor_meta_info const& meta_info,
+                       raptor_query const& query, raptor_statistics & stats)
+    : reach_values(meta_info.reach_values_),
       source_time_dep(query.source_time_end_),
-      const_graph({meta_info.graph_, {query.target_}, {}}) {
+      const_graph({meta_info.graph_, {query.target_}, {}}),
+      stats(stats) {
   this->const_graph.run();
 }
 
 void invoke_cpu_raptor(schedule const& sched, raptor_query const& query,
-                   raptor_meta_info const& meta_info, raptor_statistics&) {
+                   raptor_meta_info const& meta_info, raptor_statistics & stats) {
   auto const& tt = query.tt_;
 
   auto& result = *query.result_;
@@ -200,8 +211,11 @@ void invoke_cpu_raptor(schedule const& sched, raptor_query const& query,
   init_arrivals(result, query, station_marks);
 
   std::unique_ptr<reach_data> reach_data_p = nullptr;
-  if (motis::raptor::use_reach)
-    reach_data_p = std::make_unique<reach_data>(meta_info, query);
+  if (motis::raptor::use_reach) {
+    MOTIS_START_TIMING(create_graph);
+    reach_data_p = std::make_unique<reach_data>(meta_info, query, stats);
+    stats.reach_graph_creation_time_ += MOTIS_GET_TIMING_MS(create_graph);
+  }
 
   for (raptor_round round_k = 1; round_k < max_raptor_round; ++round_k) {
     bool any_marked = false;
@@ -298,7 +312,7 @@ void find_best_routes(raptor_result & result, CacheRequest const& cache_request)
 }
 
 void generate_reach_cache(raptor_timetable const& timetable,
-                          std::vector<float>& reach_values)
+                          std::vector<std::atomic<float>>& reach_values)
 {
   logging::scoped_timer timer("generating reach cache] [cpu");
 
@@ -408,8 +422,13 @@ void generate_reach_cache(raptor_timetable const& timetable,
                       float reach_to_node = reach_metric(result[0][src_stop], result[round][node_idx]);
                       float reach_from_node = reach_metric(result[round][node_idx], best_arrival_time);
                       float new_reach = std::min(reach_to_node, reach_from_node);
-                      if(new_reach > reach_values[node_idx])
-                        reach_values[node_idx] = new_reach;
+                      
+                      auto& slot = reach_values[node_idx];
+                      float old;
+                      do {
+                        old = slot.load();
+                        if (old >= new_reach) return;
+                      } while (slot.compare_exchange_weak(old, new_reach));
                     };
 
                     // update all nodes on this trip

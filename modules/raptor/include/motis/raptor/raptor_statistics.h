@@ -13,6 +13,9 @@ struct raptor_statistics {
   uint64_t arrival_allocation_time_{0};
   uint64_t total_calculation_time_{0};
   uint64_t raptor_queries_{0};
+  uint64_t raptor_station_queries_{0};
+  uint64_t reach_dropped_stations_{0};
+  uint64_t reach_graph_creation_time_{0};
 };
 
 inline stats_category to_stats_category(char const* name,
@@ -23,7 +26,10 @@ inline stats_category to_stats_category(char const* name,
            {"rec_time", s.rec_time_},
            {"arrival_allocation_time", s.arrival_allocation_time_},
            {"total_calculation_time", s.total_calculation_time_},
-           {"raptor_queries", s.raptor_queries_}}};
+           {"raptor_queries", s.raptor_queries_},
+           {"reach_dropped_stations", s.reach_dropped_stations_},
+           {"reach_graph_creation_time", s.reach_graph_creation_time_},
+           {"raptor_station_queries", s.raptor_station_queries_}}};
 }
 
 }  // namespace motis::raptor

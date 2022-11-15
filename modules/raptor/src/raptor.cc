@@ -69,7 +69,7 @@ msg_ptr make_response(schedule const& sched, std::vector<journey> const& js,
   return make_msg(fbb);
 }
 
-bool use_reach = false;
+bool use_reach = true;
 struct raptor::impl {
   impl(schedule const& sched, [[maybe_unused]] config const& config)
       : sched_{sched} {
@@ -85,6 +85,7 @@ struct raptor::impl {
   }
 
   msg_ptr route_cpu(msg_ptr const& msg) {
+    //TODO(Rennorb): (maybe) move this to get_raptor_tabble::prepare_reach_related_fields
     if(motis::raptor::use_reach && !meta_info_->reach_loaded_) {
       LOG(logging::info) << "using reach values";
 #if defined(MOTIS_CUDA)
@@ -101,11 +102,6 @@ struct raptor::impl {
                      meta_info_->reach_values_.size());
       file.close();
       meta_info_->reach_loaded_ = true;
-    }
-
-    if (motis::raptor::use_reach) {
-      meta_info_->graph_ =
-          build_station_graph(sched_.station_nodes_, search_dir::FWD);
     }
 
     MOTIS_START_TIMING(total_calculation_time);

@@ -22,9 +22,10 @@ struct reach_data {
   std::vector<float> const& reach_values;
   time source_time_dep;
   constant_graph_dijkstra<routing::MAX_TRAVEL_TIME, map_station_graph_node> const_graph;
+  raptor_statistics & stats;
 
   reach_data::reach_data(raptor_meta_info const& meta_info,
-                         raptor_query const& query);
+                         raptor_query const& query, raptor_statistics & stats);
 };
 
 void update_route(raptor_timetable const& tt, route_id r_id,
@@ -37,7 +38,7 @@ void update_footpaths(raptor_timetable const& tt, time* current_round,
                       cpu_mark_store& station_marks);
 
 void invoke_cpu_raptor(schedule const& sched, raptor_query const& query,
-                    raptor_meta_info const& reach_values, raptor_statistics&);
+                       raptor_meta_info const& reach_values, raptor_statistics&);
 
 
 void generate_reach_cache(raptor_timetable const& timetable,

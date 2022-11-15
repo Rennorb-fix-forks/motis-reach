@@ -396,7 +396,7 @@ std::unique_ptr<raptor_meta_info> transformable_to_meta_info(
 
 void prepare_reach_related_fields(
     raptor_meta_info* meta_info,
-    raptor_timetable const& time_table) {
+    raptor_timetable const& time_table, schedule const& sched) {
   if (motis::raptor::use_reach) {
     LOG(log::info) << "Preparing reach storage";
 
@@ -419,6 +419,8 @@ void prepare_reach_related_fields(
       meta_info->reach_loaded_ = true;
     }
 
+    meta_info->graph_ =
+        build_station_graph(sched.station_nodes_, search_dir::FWD);
 
   } else {
     LOG(log::info) << "Reach is disabled";
@@ -453,7 +455,7 @@ get_raptor_timetable(schedule const& sched) {
   auto meta_info = transformable_to_meta_info(ttt);
   auto tt = create_raptor_timetable(ttt);
 
-  prepare_reach_related_fields(meta_info.get(), *tt);
+  prepare_reach_related_fields(meta_info.get(), *tt, sched);
 
   return {std::move(meta_info), std::move(tt)};
 }
