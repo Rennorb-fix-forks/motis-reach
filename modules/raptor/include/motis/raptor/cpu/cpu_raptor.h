@@ -6,7 +6,7 @@
 #include "motis/raptor/raptor_result.h"
 #include "motis/raptor/raptor_statistics.h"
 #include "motis/raptor/raptor_timetable.h"
-#include "motis/routing/label/criteria/travel_time.h"
+#include "motis/raptor/reach.h"
 
 namespace motis::raptor {
 
@@ -18,15 +18,6 @@ trip_count get_earliest_trip(raptor_timetable const& tt,
 void init_arrivals(raptor_result& result, raptor_query const& q,
                    cpu_mark_store& station_marks);
 
-struct reach_data {
-  std::vector<float> const& reach_values;
-  time source_time_dep;
-  constant_graph_dijkstra<routing::MAX_TRAVEL_TIME, map_station_graph_node> const_graph;
-  raptor_statistics & stats;
-
-  reach_data::reach_data(raptor_meta_info const& meta_info,
-                         raptor_query const& query, raptor_statistics & stats);
-};
 
 void update_route(raptor_timetable const& tt, route_id r_id,
                   time const* prev_arrivals, time* current_round,
@@ -42,6 +33,6 @@ void invoke_cpu_raptor(schedule const& sched, raptor_query const& query,
 
 
 void generate_reach_cache(raptor_timetable const& timetable,
-                          std::vector<float>& reach_values);
+                          reach_vals& reach_values);
 
 }  // namespace motis::raptor

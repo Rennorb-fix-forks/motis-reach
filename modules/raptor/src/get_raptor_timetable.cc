@@ -400,7 +400,8 @@ void prepare_reach_related_fields(
   if (motis::raptor::use_reach) {
     LOG(log::info) << "Preparing reach storage";
 
-    meta_info->reach_values_.resize(time_table.stop_count(), 0);
+    //NOTE(Rennorb): cant resize because atomics cant be moved
+    meta_info->reach_values_.resize(time_table.stop_count(), 0.0);
 
     // TODO(Rennorb): add source scheduel name into file path
     auto storage_path = fmt::format("{}.reach", time_table.stop_count());
@@ -413,8 +414,7 @@ void prepare_reach_related_fields(
 
       std::ifstream file{storage_path, std::ios::in | std::ios::binary};
       file.read((char*)meta_info->reach_values_.data(),
-                sizeof(meta_info->reach_values_[0]) *
-                    meta_info->reach_values_.size());
+                sizeof(reach_t) * meta_info->reach_values_.size());
       file.close();
       meta_info->reach_loaded_ = true;
     }
@@ -426,7 +426,7 @@ void prepare_reach_related_fields(
     LOG(log::info) << "Reach is disabled";
     meta_info->reach_values_.clear();
     meta_info->reach_values_.resize(time_table.stop_count(),
-                                           std::numeric_limits<float>::max());
+                                    {std::numeric_limits<float>::max()});
   }
 }
 

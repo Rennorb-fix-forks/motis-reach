@@ -10,6 +10,7 @@
 #include "motis/core/schedule/connection.h"
 #include "motis/core/schedule/time.h"
 #include "motis/core/schedule/constant_graph.h"
+#include "reach.h"
 
 namespace motis::raptor {
 
@@ -120,6 +121,7 @@ struct raptor_incoming_footpath {
   stop_id from_ : 24;
   time8 duration_;
 };
+
 
 struct raptor_timetable {
   raptor_timetable() = default;
@@ -237,10 +239,7 @@ struct raptor_meta_info {
   // station
   std::vector<std::vector<raptor_footpath>> initialization_footpaths_;
 
-  //NOTE(Rennorb): Be s,v,t vertices of a graph G and m(x, y, G) a metric.
-  // The reach of a v on a G is the max{ (s,t) : min(m(s,v,G), m(v,t,G)) } where
-  // (x,y) is a least cost path from x to y in G
-  std::vector<float> reach_values_;
+  reach_vals reach_values_;
   std::string reach_storage_path_;
   bool reach_loaded_{false};
   motis::constant_graph graph_;
