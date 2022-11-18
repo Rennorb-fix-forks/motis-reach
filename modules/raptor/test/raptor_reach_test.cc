@@ -61,17 +61,21 @@ TEST_F(raptor_reach_test, reach_raptor_init) {
     motis::raptor::use_reach = true;
     auto response = call(make_routing_request("/raptor_cpu"));
     auto result = motis_content(RoutingResponse, response);
-    with_reach[i] = result->statistics()->LookupByKey("raptor")
-                     ->entries()->LookupByKey(timer)
-                      ->value();
+    auto timer_field = result->statistics()->LookupByKey("raptor")
+      ->entries()->LookupByKey(timer);
+    if (timer_field) {
+      with_reach[i] = timer_field->value();
+    }
     
 
     motis::raptor::use_reach = false;
     auto response2 = call(make_routing_request("/raptor_cpu"));
     auto result2 = motis_content(RoutingResponse, response2);
-    without_reach[i] = result2->statistics()->LookupByKey("raptor")
-                    ->entries()->LookupByKey(timer)
-                    ->value();
+    auto timer_field2 = result2->statistics()->LookupByKey("raptor")
+      ->entries()->LookupByKey(timer);
+    if (timer_field2) {
+      without_reach[i] = timer_field2->value();
+    }
 
     auto testee = message_to_journeys(result);
     auto reference = message_to_journeys(result2);

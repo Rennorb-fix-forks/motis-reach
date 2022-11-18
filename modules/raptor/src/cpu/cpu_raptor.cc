@@ -435,12 +435,10 @@ void generate_reach_cache(raptor_timetable const& timetable, reach_vals& reach_v
   auto bars = utl::global_progress_bars{false};
   
   auto gen_tracker = utl::activate_progress_tracker("reach cache job generation");
-  gen_tracker->status("processing nodes").out_bounds(0, 100).in_high(timetable.stop_count());
-  auto skiped_tracker = utl::activate_progress_tracker("skipped duplicate starts");
-  skiped_tracker->status("skipped departures").out_bounds(0, 100).in_high(timetable.stop_times_.size());
+  gen_tracker->status("generating jobs").out_bounds(0, 100).in_high(timetable.stop_count());
   auto processed_tracker = utl::activate_progress_tracker("processed cache requests");
   processed_tracker->status("requests").out_bounds(0, 100).in_high(timetable.stop_count());
-  int gen_counter = 0;
+  int gen_counter = 0, skip_counter = 0;
 
   std::unordered_set<time> processed_starts;
   //NOTE(Rennorb): we can't just loop over all routs and take their stops
@@ -468,7 +466,7 @@ void generate_reach_cache(raptor_timetable const& timetable, reach_vals& reach_v
               route_for_times.index_to_stop_times_ + (trip_for_times * route_for_times.stop_count_) + route_stop];
 
           if (processed_starts.find(time_pair.departure_) != processed_starts.end()) {
-            skiped_tracker->increment(1);
+            skip_counter++;
             continue;
           }
           processed_starts.insert(time_pair.departure_);
@@ -488,9 +486,15 @@ void generate_reach_cache(raptor_timetable const& timetable, reach_vals& reach_v
     processed_tracker->update(processed_jobs);
   }
 
+  gen_tracker
+      ->status(fmt::format("generation finished {}% dpartures skipped",
+                           (float)skip_counter / (skip_counter + gen_counter)))
+      .show_progress(false);
   processed_tracker->in_high_ = gen_counter;
+
   // pusch back the final thread that was used for creating tasks so far
   workers.push_back(std::thread(route_thread, std::ref(reach_values), std::ref(timetable)));
+
   while (processed_jobs != gen_counter) {
     processed_tracker->status(fmt::format("{} / {}", processed_jobs, gen_counter));
     processed_tracker->update(processed_jobs);

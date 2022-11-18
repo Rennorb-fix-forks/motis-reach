@@ -147,7 +147,7 @@ schedule_ptr load_schedule(loader_options const& opt,
         v);
   });
 
-  utl::activate_progress_tracker("schedule");
+  auto tracker = utl::activate_progress_tracker("schedule");
   auto sched = build_graph(datasets, opt);
   if (enable_write_graph) {
     LOG(ml::info) << "writing graph: " << graph_path;
@@ -156,6 +156,14 @@ schedule_ptr load_schedule(loader_options const& opt,
       fs::create_directories(graph_dir);
     }
     write_graph(graph_path, *sched);
+  }
+  utl::remove_progress_tracker(tracker);
+  for (int i = 0; i < opt.dataset_.size(); i++) {
+    utl::remove_progress_tracker(
+        opt.dataset_prefix_.empty() || opt.dataset_prefix_[i].empty()
+            ? fmt::format("parse {}", i)
+            : fmt::format("parse {}", opt.dataset_prefix_[i])
+    );
   }
   return sched;
 }
