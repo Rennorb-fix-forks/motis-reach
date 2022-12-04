@@ -90,9 +90,9 @@ struct raptor::impl {
       LOG(logging::info) << "using reach values";
 #if defined(MOTIS_CUDA)
       // TODO(Rennorb): @implementation
-      generate_reach_cache(*timetable_, meta_info_->reach_values_);
+      generate_reach_cache(*timetable_, &sched_.stations_, meta_info_->reach_values_);
 #else
-      generate_reach_cache(*timetable_, meta_info_->reach_values_);
+      generate_reach_cache(*timetable_, &sched_.stations_, meta_info_->reach_values_);
 #endif
 
       std::ofstream file{meta_info_->reach_storage_path_,

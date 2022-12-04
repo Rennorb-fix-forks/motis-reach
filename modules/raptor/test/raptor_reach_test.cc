@@ -52,41 +52,63 @@ TEST_F(raptor_reach_test, reach_raptor_init) {
   auto const sched = loader::load_schedule(dataset_opt);
 
   int runs = 100;
-  std::vector<uint64_t> with_reach(runs);
-  std::vector<uint64_t> without_reach(runs);
+  struct Data {
+    std::vector<uint64_t> timer;
+    std::vector<uint64_t> queries;
+    std::vector<uint64_t> dropped_queries;
 
-  const char* timer = "raptor_time"; //total_calculation_time
+    Data(int runs) : timer(runs), queries(runs), dropped_queries(runs) {}
+  } with_reach(runs), without_reach(runs);
+
+  struct Result {
+    msg_ptr response; //keep alive
+    RoutingResponse const* result;
+
+    ~Result() = default;
+  };
+
+  auto const call_and_update_stats = [&](int run_index, Data& data) -> Result {
+    auto response = call(make_routing_request("/raptor_cpu"));
+    auto result = motis_content(RoutingResponse, response);
+    auto raptor_stats = result->statistics()->LookupByKey("raptor");
+
+    auto timer_field = raptor_stats->entries()->LookupByKey("raptor_time"); //total_calculation_time
+    if (timer_field) data.timer[run_index] = timer_field->value();
+
+    auto queries_field = raptor_stats->entries()->LookupByKey("raptor_station_queries");
+    if (queries_field) data.queries[run_index] = queries_field->value();
+
+    auto dropped_queries_field = raptor_stats->entries()->LookupByKey("reach_dropped_stations");
+    if (dropped_queries_field) data.dropped_queries[run_index] = dropped_queries_field->value();
+
+    return { response, result };
+  };
 
   for(int i = 0; i < runs; i++) {
     motis::raptor::use_reach = true;
-    auto response = call(make_routing_request("/raptor_cpu"));
-    auto result = motis_content(RoutingResponse, response);
-    auto timer_field = result->statistics()->LookupByKey("raptor")
-      ->entries()->LookupByKey(timer);
-    if (timer_field) {
-      with_reach[i] = timer_field->value();
-    }
-    
+    auto result1 = call_and_update_stats(i, with_reach);
 
     motis::raptor::use_reach = false;
-    auto response2 = call(make_routing_request("/raptor_cpu"));
-    auto result2 = motis_content(RoutingResponse, response2);
-    auto timer_field2 = result2->statistics()->LookupByKey("raptor")
-      ->entries()->LookupByKey(timer);
-    if (timer_field2) {
-      without_reach[i] = timer_field2->value();
-    }
+    auto result2 = call_and_update_stats(i, without_reach);
 
-    auto testee = message_to_journeys(result);
-    auto reference = message_to_journeys(result2);
+    auto reference = message_to_journeys(result2.result);
+    auto testee = message_to_journeys(result1.result);
     EXPECT_EQ(reference, testee);
   }
 
-  auto avg_with    = (float)std::reduce(with_reach.begin(), with_reach.end()) / (float)runs;
-  auto avg_without = (float)std::reduce(without_reach.begin(), without_reach.end()) / (float)runs;
+  auto avg_time_with    = (float)std::reduce(with_reach.timer.begin(), with_reach.timer.end()) / runs;
+  auto avg_time_without = (float)std::reduce(without_reach.timer.begin(), without_reach.timer.end()) / runs;
 
-  LOG(logging::info) << runs << " runs; with reach: " << avg_with
-                             << ", without reach: " << avg_without;
+  auto avg_queries_with    = (float)std::reduce(with_reach.queries.begin(), with_reach.queries.end()) / runs;
+  auto avg_queries_without = (float)std::reduce(without_reach.queries.begin(), without_reach.queries.end()) / runs;
+
+  auto avg_dropped_queries_with    = (float)std::reduce(with_reach.dropped_queries.begin(), with_reach.dropped_queries.end()) / runs;
+  auto avg_dropped_queries_without = (float)std::reduce(without_reach.dropped_queries.begin(), without_reach.dropped_queries.end()) / runs;
+
+  LOG(logging::info) << runs << " runs \n" 
+                     << "time           : with reach : " << avg_time_with << ", without reach: " << avg_time_without << "\n" 
+                     << "queries        : with reach : " << avg_queries_with << ", without reach: " << avg_queries_without << "\n" 
+                     << "dropped queries: with reach : " << avg_dropped_queries_with << ", without reach: " << avg_dropped_queries_without;
 
 }
 

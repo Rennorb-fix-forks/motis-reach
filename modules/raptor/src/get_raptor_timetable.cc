@@ -419,6 +419,19 @@ void prepare_reach_related_fields(
       meta_info->reach_loaded_ = true;
     }
 
+    //TODO(Rennorb): @remove-debug
+    int kaeffer[] = {23126, 33536, 10825, 14312, 23286, 10872, 24577};
+    int center[] = {41656, 39997, 41955, 25689, 41905, 40397, 41574};
+
+    for (int i = 0; i < meta_info->reach_values_.size(); i++) {
+      for (int target : kaeffer)
+        if (i == target)
+          LOG(log::info) << "KAFF: " << i << " - reach: " << meta_info->reach_values_[i].load();
+      for (int target : center)
+        if (i == target)
+          LOG(log::info) << "STADT: " << i << " - reach: " << meta_info->reach_values_[i].load();
+    }
+
     meta_info->graph_ =
         build_station_graph(sched.station_nodes_, search_dir::FWD);
 

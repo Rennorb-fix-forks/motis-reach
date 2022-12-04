@@ -5,6 +5,7 @@
 #include <motis/core/schedule/constant_graph.h>
 #include "motis/raptor/raptor_statistics.h"
 #include "motis/routing/label/criteria/travel_time.h"
+#include <motis/core/schedule/station.h>
 
 namespace motis::raptor {
 
@@ -29,9 +30,11 @@ struct reach_data {
   time source_time_dep_;
   constant_graph_dijkstra<routing::MAX_TRAVEL_TIME, map_station_graph_node> const_graph_;
   raptor_statistics& stats_;
+  mcd::vector<motis::station_ptr> const& stations_;
 
   reach_data(raptor_meta_info const& meta_info, raptor_query const& query,
-             raptor_statistics& stats);
+             raptor_statistics& stats,
+             mcd::vector<motis::station_ptr> const& stations_);
 };
 
 } // namespace motis::raptor
