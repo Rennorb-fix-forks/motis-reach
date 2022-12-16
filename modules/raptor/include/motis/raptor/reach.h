@@ -14,7 +14,8 @@ using reach_t = float;
 
 struct reach_wrapper : public std::atomic<float> {
   reach_wrapper(reach_t val);
-  reach_wrapper(reach_wrapper & other);
+  reach_wrapper(reach_wrapper const& other);
+  reach_wrapper& operator=(reach_wrapper const& other);
 };
 
 using reach_vals = std::vector<reach_wrapper>;
@@ -28,7 +29,6 @@ struct reach_data {
   //  where (x,y) is a least cost path from x to y in G
   reach_vals const& reach_values_;
   time source_time_dep_;
-  constant_graph_dijkstra<routing::MAX_TRAVEL_TIME, map_station_graph_node> const_graph_;
   raptor_statistics& stats_;
   mcd::vector<motis::station_ptr> const& stations_;
 
