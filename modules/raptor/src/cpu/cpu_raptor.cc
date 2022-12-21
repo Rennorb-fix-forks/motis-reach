@@ -437,16 +437,19 @@ std::vector<std::thread> workers;
 
 void init_workers(reach_vals& reach_values, raptor_timetable const& timetable) {
   processed_jobs = 0;
-  workers.resize(std::thread::hardware_concurrency() - 1);
-  for (int i = 0; i < workers.size(); i++)
-    workers.at(i) = std::thread(route_thread, std::ref(reach_values), std::ref(timetable));
-  LOG(logging::info) << "started " << workers.size() << " workers (+1 later on)";
+  auto worker_cnt = std::thread::hardware_concurrency();
+  workers.reserve(worker_cnt);
+  for (int i = 1; i < worker_cnt; i++)
+    workers.emplace_back(route_thread, std::ref(reach_values), std::ref(timetable));
+  LOG(logging::info) << "started " << worker_cnt << " workers (1 with delayed start later on)";
 }
 
 void stop_workers() {
   terminate_workers = true;
   requests_waiter.notify_all();
-  for (int i = 0; i < workers.size(); i++) workers.at(i).join();
+  for (auto& worker : workers) {
+    if(worker.joinable()) worker.join();
+  }
 }
 
 
@@ -517,8 +520,8 @@ void generate_reach_cache(raptor_timetable const& timetable,
       .show_progress(false);
   processed_tracker->in_high_ = gen_counter;
 
-  // pusch back the final thread that was used for creating tasks so far
-  workers.push_back(std::thread(route_thread, std::ref(reach_values), std::ref(timetable)));
+  // push back the final thread that was used for creating tasks so far
+  workers.emplace_back(route_thread, std::ref(reach_values), std::ref(timetable));
 
   while (processed_jobs != gen_counter) {
     processed_tracker->status(fmt::format("{} / {}", processed_jobs, gen_counter));

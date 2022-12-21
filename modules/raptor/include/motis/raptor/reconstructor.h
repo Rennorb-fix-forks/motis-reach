@@ -343,6 +343,8 @@ struct reconstructor {
             break;
           }
         }
+
+        assert(valid(previous_station) && "could not find previous staion");
       }
 
       arrival_station = previous_station;
