@@ -78,8 +78,8 @@ struct ReachRequest {
       : data({meta_info.reach_values_, query.source_time_begin_, stats}),
         src_id(query.source_),
         dest_id(query.target_),
-        const_graph_travel_time(sched->travel_time_lower_bounds_fwd_, {query.target_}, {}),
-        sched(sched) {
+        sched(sched),
+        const_graph_travel_time(sched->travel_time_lower_bounds_fwd_, {query.target_}, {}) {
     const_graph_travel_time.run();
   }
 };
@@ -282,7 +282,6 @@ void invoke_cpu_raptor(schedule const& sched, raptor_query const& query,
 }
 
 struct CacheRequest {
-  mcd::vector<station_ptr> const* stations_;
   stop_id start_;
   time    start_time_;
 };
@@ -395,7 +394,6 @@ void route_thread(reach_vals & reach_values, raptor_timetable const& timetable) 
               // found the entry point for this trip
 
               auto update_reach = [&](stop_id curr) {
-                auto stations = cache_request.stations_;
                 float reach_to_node = reach_metric(cache_request.start_time_, result[round][curr]);
                 float reach_from_node = reach_metric(result[round][curr], result[round][dst_stop]);
                 reach_t new_reach = std::min(reach_to_node, reach_from_node);
@@ -496,7 +494,7 @@ void generate_reach_cache(raptor_timetable const& timetable,
           }
           processed_starts.insert(time_pair.departure_);
 
-          requests.push({stations, src_stop, time_pair.departure_});
+          requests.push({src_stop, time_pair.departure_});
           requests_waiter.notify_one();
 
           gen_counter++;
