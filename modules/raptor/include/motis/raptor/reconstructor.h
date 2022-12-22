@@ -30,11 +30,12 @@ struct intermediate_journey {
   void add_footpath(stop_id const to, time const a_time, time const d_time,
                     time const duration, raptor_meta_info const& raptor_sched) {
     auto const motis_index = raptor_sched.station_id_to_index_[to];
-    stops_.emplace_back(stops_.size(), motis_index, 0, 0, 0, 0, a_time, d_time,
+    assert(stops_.size() <= std::numeric_limits<unsigned int>::max() - 1);
+    stops_.emplace_back((unsigned int)stops_.size(), motis_index, 0, 0, 0, 0, a_time, d_time,
                         a_time, d_time, timestamp_reason::SCHEDULE,
                         timestamp_reason::SCHEDULE, false, true);
-    transports_.emplace_back(stops_.size() - 1, stops_.size(), duration, 0, 0,
-                             0);
+    transports_.emplace_back((unsigned int)stops_.size() - 1,
+                             (unsigned int)stops_.size(), duration, 0, 0, 0);
   }
 
   time add_route(stop_id const from, route_id const r_id,
@@ -95,12 +96,14 @@ struct intermediate_journey {
                             !transports_.back().is_walk();
       auto const is_exit = s_offset == exit_offset;
 
-      stops_.emplace_back(stops_.size(), motis_index, a_track, d_track, a_track,
+      assert(stops_.size() <= std::numeric_limits<unsigned int>::max() - 1);
+      stops_.emplace_back((unsigned int)stops_.size(), motis_index, a_track, d_track, a_track,
                           d_track, a_time, d_time, a_time, d_time,
                           timestamp_reason::SCHEDULE,
                           timestamp_reason::SCHEDULE, is_exit, is_enter);
 
-      transports_.emplace_back(stops_.size() - 1, stops_.size(), lcon);
+      transports_.emplace_back((unsigned int)stops_.size() - 1,
+                               (unsigned int)stops_.size(), lcon);
     }
 
     LOG(motis::logging::warn)
@@ -117,7 +120,8 @@ struct intermediate_journey {
     auto const d_track =
         enter ? transports_.back().con_->full_con_->d_track_ : 0;
 
-    stops_.emplace_back(stops_.size(), motis_index, 0, d_track, 0, d_track,
+    assert(stops_.size() <= std::numeric_limits<unsigned int>::max());
+    stops_.emplace_back((unsigned int)stops_.size(), motis_index, 0, d_track, 0, d_track,
                         INVALID_TIME, d_time, INVALID_TIME, d_time,
                         timestamp_reason::SCHEDULE, timestamp_reason::SCHEDULE,
                         false, enter);
