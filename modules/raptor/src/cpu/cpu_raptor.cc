@@ -63,41 +63,49 @@ void init_arrivals(raptor_result& result, raptor_query const& q,
   }
 }
 
-// these could be modified
-float dist_metric(station const& src, station const& dst) {
-  return std::abs((src.lat() * src.lat() + src.lng() * src.lng()) - (dst.lat() * dst.lat() + dst.lng() * dst.lng()));
-}
-float reach_metric(station const& src, station const& dst) {
-  return dist_metric(src, dst);
-}
+using const_graph = constant_graph_dijkstra<1440, map_station_graph_node>;
 
 struct ReachRequest {
   reach_data data;
   stop_id src_id;
   stop_id dest_id;
+  // used for lower_bounds 'distance'
+  schedule const* sched;
+  const_graph const_graph_travel_time;
 
   ReachRequest(raptor_meta_info const& meta_info, raptor_query const& query,
-               raptor_statistics& stats,
-               mcd::vector<motis::station_ptr> const& stations) 
-      : data(meta_info, query, stats, stations),
+               raptor_statistics& stats, schedule const* sched) 
+      : data({meta_info.reach_values_, query.source_time_begin_, stats}),
         src_id(query.source_),
-        dest_id(query.target_) {}
+        dest_id(query.target_),
+        const_graph_travel_time(sched->travel_time_lower_bounds_fwd_, {query.target_}, {}),
+        sched(sched) {
+    const_graph_travel_time.run();
+  }
 };
+
+// these could be modified
+reach_t dist_metric(ReachRequest const& request, stop_id current_id) {
+  // TODO(Rennorb): validate that using index_ is correct here
+  return (reach_t)request.const_graph_travel_time[request.sched->station_nodes_[current_id].get()];
+}
+reach_t reach_metric(time src_departure_time, time current_arrival_time) {
+  return current_arrival_time - src_departure_time;
+}
 
 
 
 // returns true if reach values indicate viable path
-bool test_reach(ReachRequest const& request, stop_id current_id) {
-  auto& curr = request.data.stations_[current_id];
+bool test_reach(ReachRequest const& request, stop_id current_id, time current_arrival_time) {
   auto curr_reach = request.data.reach_values_[current_id];
-  return curr_reach >= reach_metric(*request.data.stations_[request.src_id], *curr) ||
-         curr_reach >= dist_metric(*curr, *request.data.stations_[request.dest_id]);
+  return curr_reach >= reach_metric(request.data.source_time_dep_, current_arrival_time) ||
+         curr_reach >= dist_metric(request, current_id);
 }
 
 void update_route(raptor_timetable const& tt, route_id const r_id,
                   time const* const prev_arrivals, time* const current_round,
                   earliest_arrivals& ea, cpu_mark_store& station_marks,
-                  ReachRequest const* reach_dat = nullptr) {
+    std::optional<ReachRequest> const reach_dat = std::optional<ReachRequest>()) {
   auto const& route = tt.routes_[r_id];
 
   trip_count earliest_trip_id = invalid<trip_count>;
@@ -109,7 +117,7 @@ void update_route(raptor_timetable const& tt, route_id const r_id,
           get_earliest_trip(tt, route, prev_arrivals, r_stop_offset);
       continue;
     }
-
+    
     auto const stop_id =
         tt.route_stops_[route.index_to_route_stops_ + r_stop_offset];
     auto const current_stop_time_idx = route.index_to_stop_times_ +
@@ -125,7 +133,8 @@ void update_route(raptor_timetable const& tt, route_id const r_id,
     if (stop_time.arrival_ < min) {
       if (reach_dat) {
         reach_dat->data.stats_.raptor_station_queries_++;
-        if (!test_reach(*reach_dat, stop_id)) {
+        
+        if (!test_reach(*reach_dat, stop_id, min)) {
           reach_dat->data.stats_.reach_dropped_stations_++;
           continue;
         }
@@ -165,7 +174,8 @@ void update_route(raptor_timetable const& tt, route_id const r_id,
 void update_footpaths(raptor_timetable const& tt, time* current_round,
                       earliest_arrivals const& ea,
                       cpu_mark_store& station_marks,
-                      ReachRequest const* reach_dat = nullptr) {
+                      std::optional<ReachRequest> const reach_dat =
+                          std::optional<ReachRequest>()) {
 
   for (stop_id stop_id = 0; stop_id < tt.stop_count(); ++stop_id) {
 
@@ -198,7 +208,7 @@ void update_footpaths(raptor_timetable const& tt, time* current_round,
       if (new_arrival < min) {
         if (reach_dat) {
           reach_dat->data.stats_.raptor_station_queries_++;
-          if (!test_reach(*reach_dat, stop_id)) {
+          if (!test_reach(*reach_dat, stop_id, min)) {
             reach_dat->data.stats_.reach_dropped_stations_++;
             continue;
           }
@@ -223,10 +233,10 @@ void invoke_cpu_raptor(schedule const& sched, raptor_query const& query,
 
   init_arrivals(result, query, station_marks);
 
-  std::unique_ptr<ReachRequest> reach_data_p = nullptr;
+  std::optional<ReachRequest> reach_request;
   if (motis::raptor::use_reach) {
     MOTIS_START_TIMING(create_graph);
-    reach_data_p = std::make_unique<ReachRequest>(meta_info, query, stats, sched.stations_);
+    reach_request.emplace(meta_info, query, stats, &sched);
     stats.reach_graph_creation_time_ += MOTIS_GET_TIMING_MS(create_graph);
   }
 
@@ -262,13 +272,12 @@ void invoke_cpu_raptor(schedule const& sched, raptor_query const& query,
       }
 
       update_route(tt, r_id, result[round_k - 1], result[round_k], ea,
-                   station_marks, reach_data_p.get());
+                   station_marks, reach_request);
     }
 
     route_marks.reset();
 
-    update_footpaths(tt, result[round_k], ea, station_marks,
-                     reach_data_p.get());
+    update_footpaths(tt, result[round_k], ea, station_marks, reach_request);
   }
 }
 
@@ -382,25 +391,13 @@ void route_thread(reach_vals & reach_values, raptor_timetable const& timetable) 
             for (stop_offset offset = 0; offset < current_stop_offset; offset++) {
               time departure = timetable.get_time_at(route, current_stop_route_trip, offset).departure_;
               auto entrance_stop_idx = timetable.get_route_stop_idx(route, offset);
-              /*if(valid(result[round - 1][entrance_stop_idx]))
-                LOG(logging::info) << format_time(result[round -
-                1][entrance_stop_idx]) << " --> "
-                                   << entrance_stop_idx << " --> " <<
-                format_time(departure);
-                                   */
               if (departure < result[round - 1][entrance_stop_idx]) continue;
               // found the entry point for this trip
 
-              // LOG(logging::info) << "found entrypoint at route "
-              //                 << current_stop_route_idx << " and trip "
-              //                 << current_stop_route_trip << " starting with "
-              //                << entrance_stop_idx << "@" <<
-              //                format_time(result[round - 1][entrance_stop_idx]);
-
               auto update_reach = [&](stop_id curr) {
                 auto stations = cache_request.stations_;
-                float reach_to_node = reach_metric(*(*stations)[cache_request.start_], *(*stations)[curr]);
-                float reach_from_node = reach_metric(*(*stations)[curr], *(*stations)[dst_stop]);
+                float reach_to_node = reach_metric(cache_request.start_time_, result[round][curr]);
+                float reach_from_node = reach_metric(result[round][curr], result[round][dst_stop]);
                 reach_t new_reach = std::min(reach_to_node, reach_from_node);
 
                 auto& slot = reach_values[curr];

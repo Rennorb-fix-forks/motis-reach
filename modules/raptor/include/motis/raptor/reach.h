@@ -30,11 +30,6 @@ struct reach_data {
   reach_vals const& reach_values_;
   time source_time_dep_;
   raptor_statistics& stats_;
-  mcd::vector<motis::station_ptr> const& stations_;
-
-  reach_data(raptor_meta_info const& meta_info, raptor_query const& query,
-             raptor_statistics& stats,
-             mcd::vector<motis::station_ptr> const& stations_);
 };
 
 } // namespace motis::raptor
