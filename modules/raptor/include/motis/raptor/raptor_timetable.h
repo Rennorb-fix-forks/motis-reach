@@ -10,7 +10,6 @@
 #include "motis/core/schedule/connection.h"
 #include "motis/core/schedule/time.h"
 #include "motis/core/schedule/constant_graph.h"
-#include "reach.h"
 
 namespace motis::raptor {
 
@@ -205,6 +204,8 @@ struct raptor_timetable {
   }
 };
 
+using reach_t = float;
+
 struct raptor_meta_info {
   raptor_meta_info() = default;
   raptor_meta_info(raptor_meta_info const&) = delete;
@@ -239,10 +240,9 @@ struct raptor_meta_info {
   // station
   std::vector<std::vector<raptor_footpath>> initialization_footpaths_;
 
-  reach_vals reach_values_;
+  std::vector<reach_t> reach_values_;
   std::string reach_storage_path_;
   bool reach_loaded_{false};
-  motis::constant_graph graph_;
 };
 
 }  // namespace motis::raptor

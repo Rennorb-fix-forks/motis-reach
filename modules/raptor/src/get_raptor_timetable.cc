@@ -426,14 +426,11 @@ void prepare_reach_related_fields(
     for (int i = 0; i < meta_info->reach_values_.size(); i++) {
       for (int target : kaeffer)
         if (i == target)
-          LOG(log::info) << "KAFF: " << i << " - reach: " << meta_info->reach_values_[i].load();
+          LOG(log::info) << "KAFF: " << i << " - reach: " << meta_info->reach_values_[i];
       for (int target : center)
         if (i == target)
-          LOG(log::info) << "STADT: " << i << " - reach: " << meta_info->reach_values_[i].load();
+          LOG(log::info) << "STADT: " << i << " - reach: " << meta_info->reach_values_[i];
     }
-
-    meta_info->graph_ =
-        build_station_graph(sched.station_nodes_, search_dir::FWD);
 
   } else {
     LOG(log::info) << "Reach is disabled";
