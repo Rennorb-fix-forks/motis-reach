@@ -18,7 +18,7 @@ using reach_t       = float;
 using reach_graph_t = constant_graph_dijkstra<1440, map_station_graph_node>;
 
 struct atomic_reach : public std::atomic<reach_t> {
-  atomic_reach(reach_t val) : std::atomic<reach_t>(val) {}
+  explicit atomic_reach(reach_t val) : std::atomic<reach_t>(val) {}
   atomic_reach(atomic_reach const& other) : std::atomic<reach_t>(other.load()) {}
   atomic_reach& operator=(atomic_reach const& other) {
     this->store(other.load());

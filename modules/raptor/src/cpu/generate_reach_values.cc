@@ -35,7 +35,7 @@ void generate_reach_values(
 
   static_assert(sizeof(atomic_reach) == sizeof(reach_t));
   assert(reach_value_storage.size() == timetable.stop_count());
-  std::vector<atomic_reach> reach_values {timetable.stop_count(), 0};
+  std::vector<atomic_reach> reach_values((size_t)timetable.stop_count(), atomic_reach{0});
 
   init_workers(reach_values, timetable);
 
