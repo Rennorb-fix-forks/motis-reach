@@ -3,6 +3,7 @@
 
 #include "motis/raptor/raptor.h"
 #include "motis/raptor/cpu/cpu_raptor.h"
+#include "motis/raptor/reconstructor.h"
 #include "utl/progress_tracker.h"
 #include "motis/core/common/logging.h"
 #include "motis/core/common/timing.h"
@@ -15,9 +16,9 @@ struct WorkerTask {
 };
 
 void stop_workers();
-void init_workers(std::vector<atomic_reach>& reach_storage, raptor_timetable const& timetable);
+void init_workers(std::vector<atomic_reach> & reach_values, ReachGenerationData const& request);
 void find_best_routes(raptor_result & result, WorkerTask const& task, raptor_timetable const& timetable);
-void worker_thread(std::vector<atomic_reach> & reach_values, raptor_timetable const& timetable);
+void worker_thread(std::vector<atomic_reach> & reach_values, ReachGenerationData const& request);
 
 std::vector<std::thread> workers;
 std::mutex               requests_mutex;
@@ -26,18 +27,16 @@ std::queue<WorkerTask>   requests;
 bool                     terminate_workers = false;
 std::atomic<uint32_t>    processed_jobs;
 
-void generate_reach_values(
-  std::vector<reach_t>          & reach_value_storage,
-  raptor_timetable         const& timetable,
-  mcd::vector<station_ptr> const& stations
-) {
+void generate_reach_values(ReachGenerationData & request) {
   logging::scoped_timer timer("generating reach cache] [cpu");
 
+  auto& [_, timetable, meta_info] = request;
+
   static_assert(sizeof(atomic_reach) == sizeof(reach_t));
-  assert(reach_value_storage.size() == timetable.stop_count());
+  assert(meta_info.reach_values_.size() == timetable.stop_count());
   std::vector<atomic_reach> reach_values((size_t)timetable.stop_count(), atomic_reach{0});
 
-  init_workers(reach_values, timetable);
+  init_workers(reach_values, request);
 
   auto bars = utl::global_progress_bars{false};
 
@@ -111,8 +110,7 @@ void generate_reach_values(
   processed_tracker->in_high_ = gen_counter;
 
   // push back the final thread that was used for creating tasks so far
-  workers.emplace_back(worker_thread, std::ref(reach_values),
-                       std::ref(timetable));
+  workers.emplace_back(worker_thread, std::ref(reach_values), std::ref(request));
 
   while (processed_jobs != gen_counter) {
     processed_tracker->status(
@@ -123,15 +121,15 @@ void generate_reach_values(
 
   stop_workers();
 
-  memcpy(reach_value_storage.data(), reach_values.data(), sizeof(reach_t) * reach_values.size());
+  memcpy(meta_info.reach_values_.data(), reach_values.data(), sizeof(reach_t) * reach_values.size());
 }
 
-void init_workers(std::vector<atomic_reach> & reach_values, raptor_timetable const& timetable) {
+void init_workers(std::vector<atomic_reach> & reach_values, ReachGenerationData const& request) {
   processed_jobs = 0;
   auto worker_cnt = std::thread::hardware_concurrency();
   workers.reserve(worker_cnt);
   for (int i = 1; i < worker_cnt; i++)
-    workers.emplace_back(worker_thread, std::ref(reach_values), std::ref(timetable));
+    workers.emplace_back(worker_thread, std::ref(reach_values), std::ref(request));
   LOG(logging::info) << "started " << worker_cnt << " workers (1 with delayed start later on)";
 }
 
@@ -143,8 +141,12 @@ void stop_workers() {
   }
 }
 
-void worker_thread(std::vector<atomic_reach> & reach_values, raptor_timetable const& timetable) {
+void worker_thread(std::vector<atomic_reach> & reach_values, ReachGenerationData const& request) {
+  auto& [schedule, timetable, meta_info] = request;
+
   raptor_result result{timetable.stop_count()};
+  reconstructor reconstructor{schedule, meta_info, timetable};
+
   while (true) {
     WorkerTask task;
     {
@@ -160,73 +162,44 @@ void worker_thread(std::vector<atomic_reach> & reach_values, raptor_timetable co
     find_best_routes(result, task, timetable);
 
     // TODO(Rennorb): could prob thread this
-    for (int dst_stop = 0; dst_stop < timetable.stop_count();
-      dst_stop++) {
+    for (int dst_stop = 0; dst_stop < timetable.stop_count(); dst_stop++) {
       // loop route (x to x)
       if (dst_stop == task.source_stop_id) continue;
 
-      // TODO(Rennorb): just take the last one - maybe reverse or remove this 
-      raptor_round best_arrival_round = invalid<raptor_round>;
-      time best_arrival_time = invalid<time>;
-      for (raptor_round round = 0; round < max_raptor_round; round++) {
-        if (result[round][dst_stop] < best_arrival_time) {
-          best_arrival_time = result[round][dst_stop];
-          best_arrival_round = round;
-        }
+      reconstructor.journeys_.clear();
+
+      base_query base_query;
+      base_query.source_ = task.source_stop_id;
+      base_query.source_time_begin_ = task.source_stop_time;
+      base_query.target_ = dst_stop;
+      reconstructor.add(raptor_query{base_query, meta_info, timetable});
+
+      //NOTE(Rennorb): this is basically `reconstructor.get_journeys()`
+      // but without some irrelevant stuff and while still keeping the station_ids
+      utl::erase_if(reconstructor.journeys_, [&](auto const& ij) {
+        return ij.get_duration() > max_travel_duration;
+      });
+
+      /*NOTE(Rennorb): usually we would have to reverse the stops. 
+         We are just going to not do this as we dont realyl care about the order.
+      for(auto& journey : reconstructor.journeys_) {
+        std::reverse(begin(journey.stops_), end(journey.stops_));
       }
-      // cant find a way to get here
-      if (!valid(best_arrival_round)) continue;
+      */
 
-      // start working backwards and reconstruct the journeys
-      stop_id current_stop_idx = dst_stop;
-      for (raptor_round round = best_arrival_round; round > 0; round--) {
-        auto& current_stop = timetable.stops_[current_stop_idx];
+      for(auto& journey : reconstructor.journeys_) {
+        for(auto& stop : journey.stops_) {
+          float reach_to_node = reach_metric(task.source_stop_time, stop.a_sched_time_);
+          float reach_from_node = reach_metric(stop.d_sched_time_, journey.get_arrival());
+          reach_t new_reach = std::min(reach_to_node, reach_from_node);
 
-        for (route_id current_stop_route_idx : timetable.iterate_route_indices(current_stop)) {
-          auto& route = timetable.routes_[current_stop_route_idx];
-          stop_offset current_stop_offset = timetable.find_stop_offset(route, current_stop_idx);
-
-          for (int current_stop_route_trip = 0; current_stop_route_trip < route.trip_count_; current_stop_route_trip++) {
-            auto time_idx = route.index_to_stop_times_ + (current_stop_route_trip * route.stop_count_) + current_stop_offset;
-
-            if (timetable.stop_times_[time_idx].arrival_ != result[round][current_stop_idx])
-              continue;
-            // found a trip that could be used
-
-            for (stop_offset offset = 0; offset < current_stop_offset; offset++) {
-              time departure = timetable.get_time_at(route, current_stop_route_trip, offset).departure_;
-              auto entrance_stop_idx = timetable.get_route_stop_idx(route, offset);
-              if (departure < result[round - 1][entrance_stop_idx]) continue;
-              // found the entry point for this trip
-
-              auto update_reach = [&](stop_id curr) {
-                float reach_to_node = reach_metric(task.source_stop_time, result[round][curr]);
-                float reach_from_node = reach_metric(result[round][curr], result[round][dst_stop]);
-                reach_t new_reach = std::min(reach_to_node, reach_from_node);
-
-                auto& slot = reach_values[curr];
-                reach_t old;
-                do {
-                  old = slot.load();
-                  if (old >= new_reach) break;
-                } while (slot.compare_exchange_weak(old, new_reach));
-              };
-
-              // update all nodes on this trip
-              update_reach(current_stop_idx);  // mark exit node
-              for (stop_offset to_mark = offset + 1;
-                offset < current_stop_offset - 1; offset++) {
-                auto node_idx = timetable.get_route_stop_idx(route, to_mark);
-                update_reach(node_idx);
-              }
-              update_reach(entrance_stop_idx);  // mark entrance node
-
-              current_stop_idx = entrance_stop_idx;
-              goto multi_break;
-            }
-          }
+          auto& slot = reach_values[stop.station_id_];
+          reach_t old;
+          do {
+            old = slot.load();
+            if (old >= new_reach) break;
+          } while (slot.compare_exchange_weak(old, new_reach));
         }
-      multi_break:;
       }
     }
 

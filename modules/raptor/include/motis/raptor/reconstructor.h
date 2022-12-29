@@ -11,6 +11,9 @@
 #include "motis/routing/output/to_journey.h"
 #include "motis/routing/output/transport.h"
 
+#include "motis/core/common/logging.h"
+
+
 namespace motis::raptor {
 
 using namespace motis::routing::output;
@@ -210,23 +213,23 @@ struct reconstructor {
 
     std::vector<candidate> candidates;
 
-    auto add_candidates = [&](stop_id const t) {
-      auto const tt = raptor_sched_.transfer_times_[t];
+    auto add_candidates = [&](stop_id const target_id) {
+      auto const tt = raptor_sched_.transfer_times_[target_id];
 
       for (auto round_k = 1; round_k < max_raptor_round; ++round_k) {
-        if (!valid(result[round_k][t])) {
+        if (!valid(result[round_k][target_id])) {
           continue;
         }
 
         auto c = candidate{q.source_,
-                           t,
+                           target_id,
                            q.source_time_begin_,
-                           result[round_k][t],
+                           result[round_k][target_id],
                            static_cast<transfers>(round_k - 1),
                            true};
 
         // Check if the journey ends with a footpath
-        for (; c.arrival_ < result[round_k][t] + tt; c.arrival_++) {
+        for (; c.arrival_ < result[round_k][target_id] + tt; c.arrival_++) {
           c.ends_with_footpath_ = journey_ends_with_footpath(c, result);
           if (!c.ends_with_footpath_) {
             break;
@@ -236,11 +239,11 @@ struct reconstructor {
         c.arrival_ -= tt;
 
         auto dominated = std::any_of(
-            std::begin(candidates), std::end(candidates),
+            begin(candidates), end(candidates),
             [&](auto const& other_c) { return other_c.dominates(c); });
 
         dominated |=
-            std::any_of(std::begin(journeys_), std::end(journeys_),
+            std::any_of(begin(journeys_), end(journeys_),
                         [&](auto const& j) { return dominates(j, c); });
 
         if (!dominated) {
@@ -497,11 +500,11 @@ struct reconstructor {
     return invalid<stop_id>;
   }
 
+  std::vector<intermediate_journey> journeys_;
 private:
   schedule const& sched_;
   raptor_meta_info const& raptor_sched_;
   raptor_timetable const& timetable_;
-  std::vector<intermediate_journey> journeys_;
 };
 
 }  // namespace motis::raptor

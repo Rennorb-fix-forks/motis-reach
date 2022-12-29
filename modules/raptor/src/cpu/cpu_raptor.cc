@@ -69,6 +69,7 @@ void update_route(raptor_timetable const& tt, route_id const r_id,
   auto const& route = tt.routes_[r_id];
 
   trip_count earliest_trip_id = invalid<trip_count>;
+  bool did_discard = false;
   for (stop_id r_stop_offset = 0; r_stop_offset < route.stop_count_;
        ++r_stop_offset) {
 
@@ -96,10 +97,10 @@ void update_route(raptor_timetable const& tt, route_id const r_id,
         
         if (!test_reach(*reach_dat, stop_id, min)) {
           reach_dat->stats->reach_dropped_stations_++;
+          did_discard = true;
           continue;
         }
       }
-
       station_marks.mark(stop_id);
       current_round[stop_id] = stop_time.arrival_;
     }

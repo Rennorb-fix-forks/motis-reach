@@ -27,10 +27,6 @@ void update_footpaths(raptor_timetable const& tt, time* current_round,
   earliest_arrivals const& ea, cpu_mark_store& station_marks,
   std::optional<ReachEvaluationData> const reach_dat = std::nullopt);
 
-void generate_reach_values(
-  std::vector<reach_t>          & reach_value_storage,
-  raptor_timetable         const& timetable,
-  mcd::vector<station_ptr> const& stations
-);
+void generate_reach_values(ReachGenerationData & request);
 
 }  // namespace motis::raptor

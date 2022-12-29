@@ -84,7 +84,7 @@ TEST_F(raptor_reach_full_test, reach_raptor_full_test) {
     without_reach[i] = without;
 
     LOG(logging::info) << "run #" << i << ": with reach: " << with
-                       << "without reach: " << without;
+                       << ", without reach: " << without;
 
     auto testee = message_to_journeys(result);
     auto reference = message_to_journeys(result2);
@@ -95,7 +95,7 @@ TEST_F(raptor_reach_full_test, reach_raptor_full_test) {
   auto avg_without = (float)std::reduce(without_reach.begin(), without_reach.end()) / (float)runs;
 
   LOG(logging::info) << runs << " runs; with reach: " << avg_with
-                             << ", without reach: " << avg_without;
+                             << ", without reach: " << avg_without << " - " << (avg_with / avg_without * 100.0f) << "% with reach";
 
 }
 

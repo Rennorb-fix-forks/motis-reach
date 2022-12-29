@@ -49,6 +49,12 @@ struct ReachEvaluationData {
   }
 };
 
+struct ReachGenerationData {
+  schedule         const& sched;
+  raptor_timetable const& timetable;
+  raptor_meta_info      & meta_info;
+};
+
 inline reach_t dist_metric(ReachEvaluationData const& data, stop_id current_id) {
   // TODO(Rennorb): validate that using index_ is correct here
   return (reach_t)data.const_graph_travel_time[data.sched->station_nodes_[current_id].get()];
