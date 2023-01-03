@@ -168,11 +168,8 @@ void worker_thread(std::vector<atomic_reach> & reach_values, ReachGenerationData
 
       reconstructor.journeys_.clear();
 
-      base_query base_query;
-      base_query.source_ = task.source_stop_id;
-      base_query.source_time_begin_ = task.source_stop_time;
-      base_query.target_ = dst_stop;
-      reconstructor.add(raptor_query{base_query, meta_info, timetable});
+      reach_query query {task.source_stop_id, task.source_stop_time, dst_stop, result};
+      reconstructor.add(query);
 
       //NOTE(Rennorb): this is basically `reconstructor.get_journeys()`
       // but without some irrelevant stuff and while still keeping the station_ids

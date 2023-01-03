@@ -400,7 +400,6 @@ void prepare_reach_related_fields(
   if (motis::raptor::use_reach) {
     LOG(log::info) << "Preparing reach storage";
 
-    //NOTE(Rennorb): cant resize because atomics cant be moved
     meta_info->reach_values_.resize(time_table.stop_count(), 0.0);
 
     // TODO(Rennorb): add source scheduel name into file path
@@ -417,19 +416,19 @@ void prepare_reach_related_fields(
                 sizeof(reach_t) * meta_info->reach_values_.size());
       file.close();
       meta_info->reach_loaded_ = true;
-    }
 
-    //TODO(Rennorb): @remove-debug
-    int kaeffer[] = {23126, 33536, 10825, 14312, 23286, 10872, 24577};
-    int center[] = {41656, 39997, 41955, 25689, 41905, 40397, 41574};
+      //TODO(Rennorb): @remove-debug
+      int kaeffer[] = {23126, 33536, 10825, 14312, 23286, 10872, 24577};
+      int center[] = {41656, 39997, 41955, 25689, 41905, 40397, 41574};
 
-    for (int i = 0; i < meta_info->reach_values_.size(); i++) {
-      for (int target : kaeffer)
-        if (i == target)
-          LOG(log::info) << "KAFF: " << i << " - reach: " << meta_info->reach_values_[i];
-      for (int target : center)
-        if (i == target)
-          LOG(log::info) << "STADT: " << i << " - reach: " << meta_info->reach_values_[i];
+      for (int i = 0; i < meta_info->reach_values_.size(); i++) {
+        for (int target : kaeffer)
+          if (i == target)
+            LOG(log::info) << "KAFF: " << i << " - reach: " << meta_info->reach_values_[i];
+        for (int target : center)
+          if (i == target)
+            LOG(log::info) << "STADT: " << i << " - reach: " << meta_info->reach_values_[i];
+      }
     }
 
   } else {

@@ -72,6 +72,23 @@ inline bool test_reach(ReachEvaluationData const& data, stop_id current_id, time
     curr_reach >= dist_metric(data, current_id);
 }
 
+struct reach_query : public base_query {
+  raptor_result const& result_;
+  raptor_result_base const& result() const { return result_; }
+
+  reach_query(stop_id source, time source_departure, stop_id target, raptor_result const& result) 
+    : base_query{
+      true, //ontrip
+      source, target, //stop ids
+      source_departure, source_departure, //start time range
+      true, // forward
+      false, false, //metas
+      false // use start footpaths
+    },
+    result_(result)
+  {}
+};
+
 } // namespace motis::raptor
 
 
