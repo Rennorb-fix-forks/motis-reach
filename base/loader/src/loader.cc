@@ -157,13 +157,19 @@ schedule_ptr load_schedule(loader_options const& opt,
     }
     write_graph(graph_path, *sched);
   }
-  utl::remove_progress_tracker(tracker);
-  for (int i = 0; i < opt.dataset_.size(); i++) {
-    utl::remove_progress_tracker(
-        opt.dataset_prefix_.empty() || opt.dataset_prefix_[i].empty()
-            ? fmt::format("parse {}", i)
-            : fmt::format("parse {}", opt.dataset_prefix_[i])
-    );
+
+  {
+    auto& trackers = utl::get_global_progress_trackers();
+    std::lock_guard<std::mutex> lock1 { trackers.mutex_ };
+
+    for(auto& [name, t] : trackers.trackers_) {
+      if(name.compare(0, 6, "parse ") == 0 || t != tracker) {
+        std::lock_guard<std::mutex> lock { t->mutex_ };
+        trackers.trackers_.erase(name);
+        if(trackers.active_tracker_ == t)
+          trackers.active_tracker_ = nullptr;
+      }
+    }
   }
   return sched;
 }
