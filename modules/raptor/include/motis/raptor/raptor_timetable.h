@@ -155,15 +155,6 @@ struct raptor_timetable {
     return static_cast<footpath_id>(footpaths_.size());
   }
 
-  [[nodiscard]] inline stop_offset
-  find_stop_offset(raptor_route const& route, stop_id stop_idx) const
-  {
-    for(stop_offset offset = 0; offset < route.stop_count_; offset++)
-      if(this->route_stops_[route.index_to_route_stops_ + offset] == stop_idx)
-        return offset;
-    return invalid<stop_offset>;
-  }
-
   template<typename T>
   struct index_iterator {
     T const* start_;

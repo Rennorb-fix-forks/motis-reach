@@ -162,12 +162,14 @@ schedule_ptr load_schedule(loader_options const& opt,
     auto& trackers = utl::get_global_progress_trackers();
     std::lock_guard<std::mutex> lock1 { trackers.mutex_ };
 
-    for(auto& [name, t] : trackers.trackers_) {
+    for(auto it = trackers.trackers_.cbegin(); it != trackers.trackers_.cend();) {
+      auto& [name, t] = *it;
       if(name.compare(0, 6, "parse ") == 0 || t != tracker) {
-        std::lock_guard<std::mutex> lock { t->mutex_ };
-        trackers.trackers_.erase(name);
+        it = trackers.trackers_.erase(it);
         if(trackers.active_tracker_ == t)
           trackers.active_tracker_ = nullptr;
+      } else {
+        it++;
       }
     }
   }
