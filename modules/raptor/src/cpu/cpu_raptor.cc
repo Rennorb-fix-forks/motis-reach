@@ -69,17 +69,14 @@ void update_route(raptor_timetable const& tt, route_id const r_id,
   auto const& route = tt.routes_[r_id];
 
   trip_count earliest_trip_id = invalid<trip_count>;
-  for (stop_id r_stop_offset = 0; r_stop_offset < route.stop_count_;
-       ++r_stop_offset) {
+  for (stop_id r_stop_offset = 0; r_stop_offset < route.stop_count_; ++r_stop_offset) {
 
     if (!valid(earliest_trip_id)) {
-      earliest_trip_id =
-          get_earliest_trip(tt, route, prev_arrivals, r_stop_offset);
+      earliest_trip_id = get_earliest_trip(tt, route, prev_arrivals, r_stop_offset);
       continue;
     }
     
-    auto const stop_id =
-        tt.route_stops_[route.index_to_route_stops_ + r_stop_offset];
+    auto const stop_id = tt.route_stops_[route.index_to_route_stops_ + r_stop_offset];
     auto const current_stop_time_idx = route.index_to_stop_times_ +
                                        (earliest_trip_id * route.stop_count_) +
                                        r_stop_offset;
@@ -91,16 +88,20 @@ void update_route(raptor_timetable const& tt, route_id const r_id,
     auto const min = std::min(current_round[stop_id], ea[stop_id]);
 
     if (stop_time.arrival_ < min) {
+      bool skip = false;
       if (reach_dat) {
         reach_dat->stats->raptor_station_queries_++;
         
         if (!test_reach(*reach_dat, stop_id, min)) {
           reach_dat->stats->reach_dropped_stations_++;
-          continue;
+          skip = true;
         }
       }
-      station_marks.mark(stop_id);
-      current_round[stop_id] = stop_time.arrival_;
+
+      if(!skip) {
+        station_marks.mark(stop_id);
+        current_round[stop_id] = stop_time.arrival_;
+      }
     }
 
     /*
@@ -207,14 +208,11 @@ void invoke_cpu_raptor(schedule const& sched, raptor_query const& query,
         continue;
       }
 
-      if (!any_marked) {
-        any_marked = true;
-      }
+      any_marked = true;
 
       auto const& stop = tt.stops_[s_id];
-      for (auto sri = stop.index_to_stop_routes_;
-           sri < stop.index_to_stop_routes_ + stop.route_count_; ++sri) {
-        route_marks.mark(tt.stop_routes_[sri]);
+      for (size_t sri = 0; sri < stop.route_count_; ++sri) {
+        route_marks.mark(tt.stop_routes_[stop.index_to_stop_routes_ + sri]);
       }
     }
 
@@ -229,8 +227,7 @@ void invoke_cpu_raptor(schedule const& sched, raptor_query const& query,
         continue;
       }
 
-      update_route(tt, r_id, result[round_k - 1], result[round_k], ea,
-                   station_marks, reach_data);
+      update_route(tt, r_id, result[round_k - 1], result[round_k], ea, station_marks, reach_data);
     }
 
     route_marks.reset();

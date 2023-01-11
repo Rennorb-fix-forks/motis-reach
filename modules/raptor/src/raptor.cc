@@ -69,6 +69,7 @@ msg_ptr make_response(schedule const& sched, std::vector<journey> const& js,
   return make_msg(fbb);
 }
 
+///TODO(Rennorb): make this a command line ooption
 bool use_reach = true;
 struct raptor::impl {
   impl(schedule const& sched, [[maybe_unused]] config const& config)

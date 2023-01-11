@@ -167,7 +167,6 @@ void worker_thread(std::vector<atomic_reach> & reach_values, ReachGenerationData
       if (dst_stop == task.source_stop_id) continue;
 
       reconstructor.journeys_.clear();
-
       reach_query query {task.source_stop_id, task.source_stop_time, dst_stop, result};
       reconstructor.add(query);
 
@@ -204,6 +203,8 @@ void worker_thread(std::vector<atomic_reach> & reach_values, ReachGenerationData
   }
 }
 
+
+//TODO(Rennorb): just combine this with invoke_cpu_raptor, its basically the same anyways
 void find_best_routes(raptor_result & result, WorkerTask const& task, raptor_timetable const& timetable) {
   earliest_arrivals ea(timetable.stop_count(), invalid<time>);
 
